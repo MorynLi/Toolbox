@@ -8,14 +8,14 @@
 Toolbox/
 ├── README.md
 ├── .gitignore
-├── academic_validation_plot/
+├── academic_plot/
 │   ├── README.md
 │   ├── plot_validation.py
 │   ├── requirements.txt
 │   └── example/
 │       ├── config.json
 │       └── input.csv
-└── directory_scanner/
+└── file_scan/
     ├── README.md
     └── scan_directory.py
 ```
@@ -24,8 +24,8 @@ Toolbox/
 
 | 目录 | 用途 | 依赖 |
 |---|---|---|
-| `academic_validation_plot/` | 生成实测—模拟学术验证图，正式输出 SVG | Python 3.9+；NumPy、Pandas、Matplotlib |
-| `directory_scanner/` | 生成目录树、文件清单和扫描摘要 | Python 3.9+ 标准库 |
+| `academic_plot/` | 生成实测—模拟学术验证图，正式输出 SVG | Python 3.9+；NumPy、Pandas、Matplotlib |
+| `file_scan/` | 生成目录树、文件清单和扫描摘要 | Python 3.9+ 标准库 |
 
 ## 设计原则
 
