@@ -1,0 +1,54 @@
+# Toolbox
+
+面向科研与工程工作的轻量个人工具箱。每个子目录都是**可独立复制、独立运行、独立维护**的小工具；仓库不保存具体课题的大型数据、模型输出或论文真值。
+
+## 目录
+
+```text
+Toolbox/
+├── README.md
+├── .gitignore
+├── academic_validation_plot/
+│   ├── README.md
+│   ├── plot_validation.py
+│   ├── requirements.txt
+│   └── example/
+│       ├── config.json
+│       └── input.csv
+└── directory_scanner/
+    ├── README.md
+    └── scan_directory.py
+```
+
+## 工具
+
+| 目录 | 用途 | 依赖 |
+|---|---|---|
+| `academic_validation_plot/` | 生成实测—模拟学术验证图，正式输出 SVG | Python 3.9+；NumPy、Pandas、Matplotlib |
+| `directory_scanner/` | 生成目录树、文件清单和扫描摘要 | Python 3.9+ 标准库 |
+
+## 设计原则
+
+1. **项目与工具解耦**：项目只准备标准输入和配置；通用逻辑留在本仓库。
+2. **接口稳定**：命令行参数、输入字段和输出含义不随项目变化。
+3. **配置优先**：时间窗、坐标范围、站点名、变量标签等项目参数写配置，不写死在代码中。
+4. **跨环境**：路径统一用 `pathlib`；不依赖固定盘符、工作目录或本机字体。
+5. **低依赖**：能用标准库解决的任务不引入第三方包。
+6. **可检查**：示例可作为最小 smoke test；输出失败时给出明确错误，而不是静默生成错误结果。
+
+## AI / 人工维护约束
+
+- 修改前先阅读本文件和目标工具的 `README.md`。
+- 不把具体课题名称、绝对路径、站点数据、时间范围写进通用代码。
+- 不无故拆分模块；单文件逻辑能清楚表达时保持单文件。
+- 不静默改变 CLI 参数、CSV 字段或默认输出语义；确需改变时升级版本并同步 README。
+- 绘图工具的视觉语法属于稳定接口。项目级坐标范围、标签、时间窗优先通过 JSON 调整。
+- 新依赖必须有明确收益，并同步更新 `requirements.txt`。
+
+## 环境建议
+
+```bash
+python --version
+```
+
+推荐 Python 3.9–3.13。Windows、Linux、macOS 均可使用；字体不存在时绘图工具会自动回退到可用字体。
