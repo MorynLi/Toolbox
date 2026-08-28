@@ -1,0 +1,31 @@
+{
+  "stations": ["A1", "A2", "A3", "A4"],
+  "layout": {
+    "rows": 2,
+    "cols": 2,
+    "figsize_in": [10.6, 7.55],
+    "subplot_adjust": {
+      "wspace": 0.16,
+      "hspace": 0.12
+    },
+    "hide_y_label_nonfirst_col": true,
+    "hide_x_label_nonlast_row": true
+  },
+  "x_axis": {
+    "range": [0, 72],
+    "ticks": [0, 12, 24, 36, 48, 60, 72],
+    "label": "Time (h)"
+  },
+  "y_axis": {
+    "range": [990, 1015],
+    "ticks": [990, 995, 1000, 1005, 1010, 1015],
+    "label": "Pressure (hPa)"
+  },
+  "station_label": {
+    "x": 0.03,
+    "y": 0.97
+  },
+  "legend": {
+    "labels": ["Observed", "Simulated"]
+  }
+}
