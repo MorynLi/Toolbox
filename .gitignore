@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.DS_Store
+Thumbs.db
+
+# Generated outputs
+*.svg
+*.png
+目录树.txt
+文件清单.csv
+扫描摘要.txt
