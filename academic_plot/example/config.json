@@ -14,18 +14,19 @@
   "x_axis": {
     "range": [0, 72],
     "ticks": [0, 12, 24, 36, 48, 60, 72],
-    "label": "Time (h)"
+    "label": "时间（h）"
   },
   "y_axis": {
     "range": [990, 1015],
     "ticks": [990, 995, 1000, 1005, 1010, 1015],
-    "label": "Pressure (hPa)"
+    "label": "气压（hPa）"
   },
   "station_label": {
+    "enabled": true,
     "x": 0.03,
     "y": 0.97
   },
   "legend": {
-    "labels": ["Observed", "Simulated"]
+    "labels": ["实测", "模拟"]
   }
 }
