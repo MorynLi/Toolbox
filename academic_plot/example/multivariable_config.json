@@ -1,0 +1,48 @@
+{
+  "layout": {
+    "rows": 2,
+    "cols": 1,
+    "figsize_in": [7.2, 5.6],
+    "subplot_adjust": {
+      "hspace": 0.08
+    },
+    "hide_x_label_nonlast_row": true
+  },
+  "time_transform": {
+    "datetime_col": "time_utc",
+    "origin": "2020-01-01 00:00:00",
+    "unit": "h"
+  },
+  "x_axis": {
+    "range": [0, 24],
+    "ticks": [0, 6, 12, 18, 24],
+    "label": "时间（h）"
+  },
+  "panels": [
+    {
+      "reference_col": "pressure_reference",
+      "simulation_col": "pressure_simulation",
+      "y_axis": {
+        "range": [990, 1010],
+        "ticks": [990, 995, 1000, 1005, 1010],
+        "label": "P（hPa）"
+      }
+    },
+    {
+      "reference_col": "wind_reference",
+      "simulation_col": "wind_simulation",
+      "simulation_valid": {
+        "column": "wind_sim_ok",
+        "values": [1]
+      },
+      "y_axis": {
+        "range": [10, 35],
+        "ticks": [10, 15, 20, 25, 30, 35],
+        "label": "V（m/s）"
+      }
+    }
+  ],
+  "legend": {
+    "labels": ["参考", "模拟"]
+  }
+}
