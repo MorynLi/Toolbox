@@ -1,0 +1,12 @@
+{
+  "schema_version": "0.1",
+  "pack_name": "example_handoff",
+  "documents": [
+    {"source": "00_START_HERE.md", "target": "00_START_HERE.md", "role": "entrypoint", "required": true},
+    {"source": "01_CONTEXT.md", "target": "01_CONTEXT.md", "role": "context", "required": true},
+    {"source": "02_DECISIONS.md", "target": "02_DECISIONS.md", "role": "decisions", "required": true},
+    {"source": "03_OPEN_TASKS.md", "target": "03_OPEN_TASKS.md", "role": "open_tasks", "required": true},
+    {"source": "04_ASSETS.md", "target": "04_ASSETS.md", "role": "asset_index", "required": true}
+  ],
+  "assets": []
+}
