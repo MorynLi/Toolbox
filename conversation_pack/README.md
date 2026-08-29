@@ -1,145 +1,162 @@
 # conversation_pack
 
-面向 AI 长对话迁移的上下文打包工具。它不尝试自动理解所有聊天内容，而是把职责拆成两层：
+面向 AI 长对话迁移的轻量打包工具。
 
-- **AI 负责语义选择**：提炼当前对话中真正需要带走的背景、决定、待办、约束和关键附件。
-- **脚本负责确定性打包**：校验文件、复制附件、计算 SHA-256、生成 manifest/QA，并可输出 ZIP。
+它解决的问题是：
 
-目标不是保存完整聊天记录，而是让另一个 AI 对话窗口能够以较低上下文成本继续尚未完成的工作。
+> 当前对话尚未结束，但窗口已经过长，需要迁移到新对话继续；如何把真正需要继承的信息和文件带过去，而不是重新灌入全部聊天历史。
 
-> 当前版本首先在科研/工程长对话中试验，但协议本身不绑定任何具体项目、学科、模型或 ChatGPT 产品。
+核心逻辑：
 
-## 目录
+> **GPT 负责盘点，用户负责筛选，脚本负责搬运。**
+
+当前版本不建立复杂节点图、不自动给信息打分，也不保存完整聊天原文。
+
+## 工作流
+
+### 1. Preview
+
+用户提出“总结一下 / 准备换对话”后，GPT 先只输出候选框架：
+
+- 当前任务、状态、下一步；
+- 当前对话涉及的文件 / 数据 / 产物类型和具体名称；
+- 建议继承的关键信息；
+- 无法确定的文件标记为待确认。
+
+这一步**不生成 ZIP**。
+
+### 2. 用户筛选
+
+用户决定最终迁移什么，例如：
 
 ```text
-conversation_pack/
-├── README.md
-├── PROTOCOL.md
-├── build_pack.py
-└── example/
-    ├── spec.json
-    ├── 00_START_HERE.md
-    ├── 01_CONTEXT.md
-    ├── 02_DECISIONS.md
-    ├── 03_OPEN_TASKS.md
-    └── 04_ASSETS.md
+只留验证数据、当前模型结果和最终 SVG 绘图流程。
+统计结果也留，中间调试图不要。
 ```
 
-## 一个标准迁移包
+用户不需要自己记住精确文件名；GPT 应根据当前对话把这些类别解析成实际文件。
+
+### 3. Build
+
+确认后，GPT 准备：
+
+```text
+HANDOFF.md
+spec.json
+```
+
+`HANDOFF.md` 只保存用户确认后的有效状态；`spec.json` 只列用户确认要携带的实际文件。
+
+然后运行：
+
+```bash
+python build_pack.py spec.json --zip
+```
+
+脚本只执行确定性工作：文件检查、复制、SHA-256、manifest、QA 和 ZIP。
+
+## 最终包结构
 
 ```text
 conversation_pack_xxx/
-├── 00_START_HERE.md
-├── 01_CONTEXT.md
-├── 02_DECISIONS.md
-├── 03_OPEN_TASKS.md
-├── 04_ASSETS.md
+├── HANDOFF.md
 ├── manifest.json
 ├── QA.md
 └── files/
-    └── ...关键附件...
+    └── ...用户确认的文件...
 ```
 
-建议新对话首先只读取 `00_START_HERE.md`，随后按其中指示读取其他文档或附件，避免一次性重新灌入全部历史信息。
+新对话先读取 `HANDOFF.md`，再按需要读取 `files/`。
 
-## 为什么不做“一键自动总结聊天”
+## `HANDOFF.md`
 
-长对话的难点不是文件复制，而是语义取舍。通用脚本无法可靠判断：
+推荐保持简短：
 
-- 哪个结论已经被用户明确确认；
-- 哪个只是 AI 的临时推测；
-- 哪条旧路线已经被放弃；
-- 哪些附件对下一步真正必要；
-- 哪些一次性要求不应该升级为长期规则。
+```markdown
+# Handoff
 
-因此 `conversation_pack` 不内置自由摘要器。AI 先按照 `PROTOCOL.md` 生成 handoff 文档和 `spec.json`，再由 `build_pack.py` 做机械、可检查的打包。
+## 当前任务
 
-## 使用
+## 当前状态
 
-准备 handoff 文档和 `spec.json` 后：
+## 需要继承的关键信息
 
-```bash
-python build_pack.py example/spec.json --zip
+## 已确认规则 / 结论
+
+## 下一步
+
+## 携带文件说明
 ```
 
-默认输出到 spec 所在目录下：
-
-```text
-_conversation_pack/<pack_name>/
-```
-
-并在 `--zip` 时同时生成：
-
-```text
-_conversation_pack/<pack_name>.zip
-```
-
-指定其他输出目录：
-
-```bash
-python build_pack.py spec.json --output-dir ./handoff --zip
-```
-
-若目标目录已经存在，脚本默认拒绝覆盖；确需重建时显式使用：
-
-```bash
-python build_pack.py spec.json --output-dir ./handoff --force --zip
-```
+不默认保存用户 / GPT 的逐轮原话。
 
 ## `spec.json`
 
-最小示例：
+v0.2 示例：
 
 ```json
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "pack_name": "example_handoff",
-  "documents": [
-    {
-      "source": "00_START_HERE.md",
-      "target": "00_START_HERE.md",
-      "role": "entrypoint",
-      "required": true
-    }
-  ],
+  "handoff": "HANDOFF.md",
   "assets": [
     {
-      "source": "source/example.csv",
-      "target": "files/example.csv",
-      "role": "reference_data",
-      "required": false
+      "source": "source/current_truth.xlsx",
+      "target": "files/current_truth.xlsx",
+      "label": "当前真值数据",
+      "role": "validation_data",
+      "required": true
     }
   ]
 }
 ```
 
-`source` 相对于 `spec.json` 所在目录解析，也允许绝对路径。`target` 必须是迁移包内的相对路径，禁止 `..` 路径穿越。
+`source` 相对于 `spec.json` 所在目录解析，也允许绝对路径；最终 `manifest.json` 不记录本机绝对源路径。
 
-脚本不会把本机绝对源路径写入最终 `manifest.json`；manifest 只记录目标路径、原文件名、角色、大小和 SHA-256，降低无意义的本机路径泄露。
+## 文件选择原则
+
+文件是否迁移，最终由用户决定。GPT 只负责盘点和轻量建议。
+
+通常值得列入候选：
+
+- 用户明确要求后续继续使用的文件 / 文件类别；
+- 下一对话仍需使用的输入数据；
+- 当前对话生成且后续仍需复用的结果；
+- 已成为当前工作基线的脚本、配置或图表。
+
+通常不迁移：
+
+- 仅用于一次排错、后续无用的截图 / 日志；
+- 被新版本完全覆盖的旧文件；
+- 后续不再使用的中间产物；
+- 新 GPT 可直接重新完成的普通问题解决过程；
+- 完整聊天原文。
+
+**文件不可复现并不等于必须保留；后续还会不会用，才是关键。**
 
 ## QA 行为
 
 `build_pack.py` 会检查：
 
-- `schema_version` 与 `pack_name`；
+- schema 和 pack name；
+- `HANDOFF.md` 是否存在；
 - target 是否安全、是否重复；
-- `00_START_HERE.md` 是否存在；
-- required 文件是否全部存在；
+- required 文件是否存在；
+- 每个打包文件的 SHA-256 和大小；
 - optional 文件缺失情况；
-- 每个已打包文件的 SHA-256 和大小；
 - 最终文件数和总大小。
 
-required 文件缺失时直接失败，不生成“看似完整”的迁移包；optional 文件缺失只写入 `QA.md`。
+默认不覆盖已有输出，使用 `--force` 才会重建。
 
 ## 设计边界
 
-1. 不保存完整聊天原文作为默认方案。
-2. 不让脚本猜测语义重要性。
-3. 不修改源文件。
-4. 不静默忽略 required 文件。
-5. 不把具体科研项目名称、绝对路径或单次任务规则写入通用核心代码。
-6. 对话包是**任务连续性工件**，不是长期用户记忆系统。
+1. GPT 不应在用户确认前直接生成正式 Pack。
+2. 用户负责最终筛选，GPT 不替用户做复杂价值判断。
+3. 脚本不理解聊天语义。
+4. 不保存完整聊天原文作为默认方案。
+5. 不修改源文件。
+6. 不把单次对话规则升级为长期 AI 记忆。
 
-## 当前状态
+完整协议见 [`PROTOCOL.md`](./PROTOCOL.md)。
 
-当前为 `v0.1` 试验协议。先用真实长对话反复迁移，观察遗漏、冗余和误分类，再决定是否升级为更深度的 GPT/AI 工具集成。
+当前为 **v0.2 试验版**，先在真实长对话中验证后再继续扩展。
