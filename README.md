@@ -18,6 +18,11 @@ Toolbox/
 │       ├── input.csv
 │       ├── multivariable_config.json
 │       └── multivariable_input.csv
+├── conversation_pack/
+│   ├── README.md
+│   ├── PROTOCOL.md
+│   ├── build_pack.py
+│   └── example/
 ├── file_scan/
 │   ├── README.md
 │   └── scan_directory.py
@@ -32,6 +37,7 @@ Toolbox/
 | 目录 | 用途 | 依赖 |
 |---|---|---|
 | `academic_plot/` | 学术验证时序图；支持“多站点 × 单变量”和“单事件 × 多变量”，正式输出 SVG | Python 3.9+；NumPy、Pandas、Matplotlib |
+| `conversation_pack/` | 将尚未结束的长 AI 对话整理为可追溯、可校验、可携带附件的上下文迁移包 | Python 3.9+ 标准库；语义 handoff 由 AI 按协议生成 |
 | `file_scan/` | 为 AI/LLM 生成低上下文成本的目录索引：摘要、紧凑目录树、完整文件清单与机器可读 manifest | Python 3.9+ 标准库 |
 | `plot_digitizer_launcher/` | 为已安装的 PlotDigitizer 提供 Windows 一键启动、浏览器打开和安全停止封装 | Windows 10/11、PowerShell；PlotDigitizer 的 Python/Node 环境已完成配置 |
 
@@ -44,6 +50,7 @@ Toolbox/
 5. **低依赖**：能用标准库或现有依赖解决的任务，不额外引入包。
 6. **可检查**：每个工具保留最小 smoke test 或明确的验证记录；错误应显式报出，不静默生成错误结果。
 7. **不臃肿**：不同数据组织模式可分脚本，但不为少量逻辑无故拆分模块。
+8. **AI 与确定性程序分工**：语义判断由 AI 明确产出并保留状态/来源，文件复制、校验、hash、打包等机械操作交给脚本，不让通用脚本假装理解复杂上下文。
 
 ## AI / 人工维护约束
 
@@ -53,6 +60,7 @@ Toolbox/
 - 绘图工具的视觉语法属于稳定接口；项目级差异优先通过 JSON 调整。
 - 数据质量规则用于筛选数据，不应自动在主图内生成长说明文字。
 - 新依赖必须有明确收益，并同步更新 `requirements.txt`。
+- Conversation Pack 中必须区分用户确认、程序/文件验证、工作假设和已否决路线，不把 AI 推断伪装成确定事实。
 
 ## 环境建议
 
