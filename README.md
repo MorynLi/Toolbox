@@ -32,7 +32,7 @@ Toolbox/
 | 目录 | 用途 | 依赖 |
 |---|---|---|
 | `academic_plot/` | 学术验证时序图；支持“多站点 × 单变量”和“单事件 × 多变量”，正式输出 SVG | Python 3.9+；NumPy、Pandas、Matplotlib |
-| `file_scan/` | 生成目录树、文件清单和扫描摘要 | Python 3.9+ 标准库 |
+| `file_scan/` | 为 AI/LLM 生成低上下文成本的目录索引：摘要、紧凑目录树、完整文件清单与机器可读 manifest | Python 3.9+ 标准库 |
 | `plot_digitizer_launcher/` | 为已安装的 PlotDigitizer 提供 Windows 一键启动、浏览器打开和安全停止封装 | Windows 10/11、PowerShell；PlotDigitizer 的 Python/Node 环境已完成配置 |
 
 ## 设计原则
