@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Generate reusable academic observed-vs-simulated validation plots as SVG."""
+"""Generate reusable multi-station reference-vs-simulation validation plots as SVG."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from matplotlib import font_manager, rcParams
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 DEFAULT_STYLE: dict[str, Any] = {
     "observed_color": "#8B0000",
@@ -34,13 +34,11 @@ REQUIRED_CONFIG_KEYS = {"stations", "layout", "x_axis", "y_axis"}
 
 
 def pick_font(candidates: list[str], fallback: str) -> str:
-    """Return the first installed font from candidates, otherwise fallback."""
     installed = {font.name for font in font_manager.fontManager.ttflist}
     return next((name for name in candidates if name in installed), fallback)
 
 
 def configure_fonts() -> None:
-    """Configure cross-platform font fallbacks and editable SVG text."""
     latin = pick_font(
         ["Times New Roman", "Times New Roman PS MT", "Nimbus Roman", "Liberation Serif", "DejaVu Serif"],
         "DejaVu Serif",
@@ -63,7 +61,6 @@ def configure_fonts() -> None:
 
 
 def break_circular(x: np.ndarray, y: np.ndarray, jump: float = 180.0) -> tuple[np.ndarray, np.ndarray]:
-    """Insert NaNs before circular jumps so Matplotlib does not draw wraparound lines."""
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
     if x.size == 0:
@@ -94,7 +91,6 @@ def break_circular(x: np.ndarray, y: np.ndarray, jump: float = 180.0) -> tuple[n
 
 
 def load_config(path: Path) -> dict[str, Any]:
-    """Load JSON and merge optional style overrides into stable defaults."""
     with path.open("r", encoding="utf-8") as file:
         config = json.load(file)
 
@@ -108,13 +104,30 @@ def load_config(path: Path) -> dict[str, Any]:
     return config
 
 
+def series_columns(config: dict[str, Any]) -> tuple[str, str]:
+    """Resolve new reference/simulation names while preserving legacy observed/simulated configs."""
+    reference_col = config.get("reference_col", config.get("observed_col", "observed"))
+    simulation_col = config.get("simulation_col", config.get("simulated_col", "simulated"))
+    return str(reference_col), str(simulation_col)
+
+
+def validity_columns(config: dict[str, Any]) -> set[str]:
+    columns: set[str] = set()
+    for key in ("reference_valid", "simulation_valid"):
+        rule = config.get(key)
+        if rule:
+            columns.add(str(rule["column"]))
+    return columns
+
+
 def validate_inputs(data: pd.DataFrame, config: dict[str, Any]) -> None:
-    """Fail early on missing columns or impossible subplot layout."""
+    reference_col, simulation_col = series_columns(config)
     columns = {
-        config.get("station_col", "station"),
-        config.get("x_col", "time_h"),
-        config.get("observed_col", "observed"),
-        config.get("simulated_col", "simulated"),
+        str(config.get("station_col", "station")),
+        str(config.get("x_col", "time_h")),
+        reference_col,
+        simulation_col,
+        *validity_columns(config),
     }
     missing = columns - set(data.columns)
     if missing:
@@ -128,15 +141,25 @@ def validate_inputs(data: pd.DataFrame, config: dict[str, Any]) -> None:
         raise ValueError("Station count exceeds available subplot slots (rows × cols).")
 
 
+def apply_validity(frame: pd.DataFrame, rule: dict[str, Any] | None) -> pd.DataFrame:
+    if not rule:
+        return frame
+    column = str(rule["column"])
+    values = rule.get("values")
+    if values is None:
+        raise ValueError("Validity rule requires a non-empty 'values' list.")
+    if not isinstance(values, list) or not values:
+        raise ValueError("Validity rule 'values' must be a non-empty list.")
+    return frame.loc[frame[column].isin(values)]
+
+
 def plot_series(ax: plt.Axes, x: np.ndarray, y: np.ndarray, *, circular: bool, jump: float, **kwargs: Any) -> None:
-    """Plot one series with optional circular wraparound breaking."""
     if circular:
         x, y = break_circular(x, y, jump)
     ax.plot(x, y, **kwargs)
 
 
 def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
-    """Render the multi-station main SVG."""
     configure_fonts()
     validate_inputs(data, config)
 
@@ -150,10 +173,9 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
     axes_flat = axes.ravel()
     fig.subplots_adjust(**config["layout"].get("subplot_adjust", {}))
 
-    station_col = config.get("station_col", "station")
-    x_col = config.get("x_col", "time_h")
-    obs_col = config.get("observed_col", "observed")
-    sim_col = config.get("simulated_col", "simulated")
+    station_col = str(config.get("station_col", "station"))
+    x_col = str(config.get("x_col", "time_h"))
+    reference_col, simulation_col = series_columns(config)
     x_axis = config["x_axis"]
     y_axis = config["y_axis"]
     circular = bool(config.get("circular", False))
@@ -162,13 +184,14 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
     for index, station in enumerate(stations):
         ax = axes_flat[index]
         station_data = data.loc[data[station_col].astype(str).eq(str(station))].sort_values(x_col)
-        observed = station_data[[x_col, obs_col]].dropna()
-        simulated = station_data[[x_col, sim_col]].dropna()
+
+        reference = apply_validity(station_data, config.get("reference_valid"))[[x_col, reference_col]].dropna()
+        simulation = apply_validity(station_data, config.get("simulation_valid"))[[x_col, simulation_col]].dropna()
 
         plot_series(
             ax,
-            observed[x_col].to_numpy(),
-            observed[obs_col].to_numpy(),
+            reference[x_col].to_numpy(),
+            reference[reference_col].to_numpy(),
             circular=circular,
             jump=circular_jump,
             color=style["observed_color"],
@@ -177,8 +200,8 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
         )
         plot_series(
             ax,
-            simulated[x_col].to_numpy(),
-            simulated[sim_col].to_numpy(),
+            simulation[x_col].to_numpy(),
+            simulation[simulation_col].to_numpy(),
             circular=circular,
             jump=circular_jump,
             color=style["simulated_color"],
@@ -210,15 +233,16 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
         ax.set_xlabel(x_axis["label"] if show_x else "", fontsize=style["axis_label_fontsize"])
 
         label_cfg = config.get("station_label", {})
-        ax.text(
-            label_cfg.get("x", 0.03),
-            label_cfg.get("y", 0.97),
-            str(station),
-            transform=ax.transAxes,
-            ha="left",
-            va="top",
-            fontsize=style["station_fontsize"],
-        )
+        if label_cfg.get("enabled", True):
+            ax.text(
+                label_cfg.get("x", 0.03),
+                label_cfg.get("y", 0.97),
+                str(station),
+                transform=ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=style["station_fontsize"],
+            )
 
     for ax in axes_flat[len(stations) :]:
         ax.set_visible(False)
@@ -229,7 +253,6 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
 
 
 def draw_legend(config: dict[str, Any], output: Path) -> None:
-    """Render a standalone SVG legend using the same visual grammar."""
     configure_fonts()
     style = config["style"]
     legend = config.get("legend", {})
@@ -260,7 +283,7 @@ def draw_legend(config: dict[str, Any], output: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, required=True, help="Prepared CSV with observed/simulated columns.")
+    parser.add_argument("--input", type=Path, required=True, help="Prepared CSV with reference/simulation columns.")
     parser.add_argument("--config", type=Path, required=True, help="JSON plot configuration.")
     parser.add_argument("--output", type=Path, required=True, help="Main SVG output path.")
     parser.add_argument("--legend-output", type=Path, default=None, help="Optional standalone legend SVG path.")
