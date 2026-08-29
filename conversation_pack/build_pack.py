@@ -14,16 +14,17 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-__version__ = "0.1.0"
-SCHEMA_VERSION = "0.1"
-RESERVED_TARGETS = {"manifest.json", "QA.md"}
-REQUIRED_ENTRYPOINT = "00_START_HERE.md"
+__version__ = "0.2.0"
+SCHEMA_VERSION = "0.2"
+HANDOFF_TARGET = Path("HANDOFF.md")
+RESERVED_TARGETS = {"HANDOFF.md", "manifest.json", "QA.md"}
 
 
 @dataclass(frozen=True)
 class Item:
     source: Path
     target: Path
+    label: str
     role: str
     required: bool
     source_name: str
@@ -46,33 +47,42 @@ def safe_target(value: str) -> Path:
         raise ValueError(f"Target must be a non-empty relative path: {value!r}")
     if any(part in {"", ".", ".."} for part in target.parts):
         raise ValueError(f"Unsafe target path: {value!r}")
-    posix = target.as_posix()
-    if posix in RESERVED_TARGETS:
+    if target.as_posix() in RESERVED_TARGETS:
         raise ValueError(f"Target is reserved by conversation_pack: {value!r}")
     return target
 
 
-def parse_item(raw: dict, spec_dir: Path, default_required: bool) -> Item:
+def resolve_source(value: str, spec_dir: Path) -> Path:
+    source = Path(value).expanduser()
+    if source.is_absolute():
+        return source.resolve(strict=False)
+    return (spec_dir / source).resolve(strict=False)
+
+
+def parse_asset(raw: dict, spec_dir: Path) -> Item:
     source_value = raw.get("source")
     target_value = raw.get("target")
     if not isinstance(source_value, str) or not source_value.strip():
-        raise ValueError("Each item requires a non-empty string 'source'.")
+        raise ValueError("Each asset requires a non-empty string 'source'.")
     if not isinstance(target_value, str) or not target_value.strip():
-        raise ValueError("Each item requires a non-empty string 'target'.")
+        raise ValueError("Each asset requires a non-empty string 'target'.")
 
-    source = Path(source_value).expanduser()
-    if not source.is_absolute():
-        source = (spec_dir / source).resolve(strict=False)
-    else:
-        source = source.resolve(strict=False)
-
+    source = resolve_source(source_value, spec_dir)
     target = safe_target(target_value)
-    role = str(raw.get("role", "unspecified"))
-    required = bool(raw.get("required", default_required))
-    return Item(source=source, target=target, role=role, required=required, source_name=source.name)
+    label = str(raw.get("label") or source.name)
+    role = str(raw.get("role") or "asset")
+    required = bool(raw.get("required", True))
+    return Item(
+        source=source,
+        target=target,
+        label=label,
+        role=role,
+        required=required,
+        source_name=source.name,
+    )
 
 
-def load_spec(path: Path) -> tuple[dict, list[Item]]:
+def load_spec(path: Path) -> tuple[dict, Path, list[Item]]:
     try:
         spec = json.loads(path.read_text(encoding="utf-8-sig"))
     except json.JSONDecodeError as error:
@@ -89,35 +99,43 @@ def load_spec(path: Path) -> tuple[dict, list[Item]]:
     if any(char in pack_name for char in '<>:"/\\|?*'):
         raise ValueError("spec.pack_name contains characters unsafe for common filesystems.")
 
+    handoff_value = spec.get("handoff")
+    if not isinstance(handoff_value, str) or not handoff_value.strip():
+        raise ValueError("spec.handoff must be a non-empty string path to HANDOFF.md source content.")
+
     spec_dir = path.parent.resolve()
-    items: list[Item] = []
-    for raw in spec.get("documents", []):
-        if not isinstance(raw, dict):
-            raise ValueError("Each documents entry must be an object.")
-        items.append(parse_item(raw, spec_dir, default_required=True))
-    for raw in spec.get("assets", []):
+    handoff_source = resolve_source(handoff_value, spec_dir)
+
+    raw_assets = spec.get("assets", [])
+    if not isinstance(raw_assets, list):
+        raise ValueError("spec.assets must be a list.")
+    assets: list[Item] = []
+    for raw in raw_assets:
         if not isinstance(raw, dict):
             raise ValueError("Each assets entry must be an object.")
-        items.append(parse_item(raw, spec_dir, default_required=False))
+        assets.append(parse_asset(raw, spec_dir))
 
-    targets = [item.target.as_posix() for item in items]
+    targets = [item.target.as_posix() for item in assets]
     duplicates = sorted({target for target in targets if targets.count(target) > 1})
     if duplicates:
         raise ValueError(f"Duplicate target paths: {duplicates}")
 
-    if REQUIRED_ENTRYPOINT not in targets:
-        raise ValueError(f"The spec must include {REQUIRED_ENTRYPOINT!r} as a target.")
-
-    return spec, items
+    return spec, handoff_source, assets
 
 
-def build_pack(spec_path: Path, output_dir: Path | None, force: bool, make_zip: bool) -> tuple[Path, Path | None]:
+def build_pack(
+    spec_path: Path,
+    output_dir: Path | None,
+    force: bool,
+    make_zip: bool,
+) -> tuple[Path, Path | None]:
     spec_path = spec_path.expanduser().resolve()
     if not spec_path.is_file():
         raise FileNotFoundError(f"Spec file not found: {spec_path}")
 
-    spec, items = load_spec(spec_path)
+    spec, handoff_source, assets = load_spec(spec_path)
     pack_name = spec["pack_name"].strip()
+
     if output_dir is None:
         pack_root = spec_path.parent / "_conversation_pack" / pack_name
     else:
@@ -134,16 +152,14 @@ def build_pack(spec_path: Path, output_dir: Path | None, force: bool, make_zip: 
             raise FileExistsError(f"ZIP already exists: {zip_path}. Use --force to rebuild.")
         zip_path.unlink()
 
-    missing_required: list[Item] = []
-    missing_optional: list[Item] = []
-    for item in items:
-        if item.source.is_file():
-            continue
-        (missing_required if item.required else missing_optional).append(item)
+    if not handoff_source.is_file():
+        raise FileNotFoundError(f"HANDOFF source file is missing: {handoff_source.name}")
 
+    missing_required = [item for item in assets if item.required and not item.source.is_file()]
+    missing_optional = [item for item in assets if not item.required and not item.source.is_file()]
     if missing_required:
-        names = ", ".join(item.source_name for item in missing_required)
-        raise FileNotFoundError(f"Required source files are missing: {names}")
+        names = ", ".join(item.label for item in missing_required)
+        raise FileNotFoundError(f"Required approved assets are missing: {names}")
 
     pack_root.mkdir(parents=True, exist_ok=False)
 
@@ -151,7 +167,24 @@ def build_pack(spec_path: Path, output_dir: Path | None, force: bool, make_zip: 
     total_size = 0
     copied_count = 0
 
-    for item in items:
+    handoff_destination = pack_root / HANDOFF_TARGET
+    shutil.copy2(handoff_source, handoff_destination)
+    handoff_size = handoff_destination.stat().st_size
+    total_size += handoff_size
+    copied_count += 1
+    manifest_items.append(
+        {
+            "target": HANDOFF_TARGET.as_posix(),
+            "source_name": handoff_source.name,
+            "label": "Conversation handoff",
+            "role": "entrypoint",
+            "required": True,
+            "size_bytes": handoff_size,
+            "sha256": sha256_file(handoff_destination),
+        }
+    )
+
+    for item in assets:
         if not item.source.is_file():
             continue
         destination = pack_root / item.target
@@ -164,6 +197,7 @@ def build_pack(spec_path: Path, output_dir: Path | None, force: bool, make_zip: 
             {
                 "target": item.target.as_posix(),
                 "source_name": item.source_name,
+                "label": item.label,
                 "role": item.role,
                 "required": item.required,
                 "size_bytes": size,
@@ -184,6 +218,7 @@ def build_pack(spec_path: Path, output_dir: Path | None, force: bool, make_zip: 
             {
                 "source_name": item.source_name,
                 "target": item.target.as_posix(),
+                "label": item.label,
                 "role": item.role,
             }
             for item in missing_optional
@@ -201,17 +236,17 @@ def build_pack(spec_path: Path, output_dir: Path | None, force: bool, make_zip: 
         f"- schema_version: `{SCHEMA_VERSION}`",
         f"- tool_version: `{__version__}`",
         f"- created_at: `{created_at}`",
+        f"- HANDOFF.md: **OK**",
         f"- copied files: **{copied_count}**",
         f"- total size: **{total_size} bytes**",
-        f"- required entrypoint: `{REQUIRED_ENTRYPOINT}` — OK",
-        f"- missing required files: **0**",
-        f"- missing optional files: **{len(missing_optional)}**",
+        "- missing required approved assets: **0**",
+        f"- missing optional assets: **{len(missing_optional)}**",
         "",
     ]
     if missing_optional:
-        qa_lines.extend(["## Missing optional files", ""])
+        qa_lines.extend(["## Missing optional assets", ""])
         for item in missing_optional:
-            qa_lines.append(f"- `{item.target.as_posix()}` ({item.role})")
+            qa_lines.append(f"- `{item.target.as_posix()}` — {item.label} ({item.role})")
         qa_lines.append("")
     qa_lines.extend(
         [
@@ -219,6 +254,7 @@ def build_pack(spec_path: Path, output_dir: Path | None, force: bool, make_zip: 
             "",
             "Every copied payload file is listed in `manifest.json` with SHA-256 and byte size.",
             "The builder does not modify source files and does not include local absolute source paths in the manifest.",
+            "Semantic correctness of `HANDOFF.md` and asset selection must be approved before this builder is run.",
             "",
         ]
     )
@@ -252,7 +288,7 @@ def main() -> int:
     args = parse_args()
     try:
         pack_root, zip_path = build_pack(args.spec, args.output_dir, args.force, args.zip)
-    except Exception as error:  # concise CLI boundary; internal functions still raise precise exceptions
+    except Exception as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
