@@ -18,9 +18,13 @@ Toolbox/
 │       ├── input.csv
 │       ├── multivariable_config.json
 │       └── multivariable_input.csv
-└── file_scan/
+├── file_scan/
+│   ├── README.md
+│   └── scan_directory.py
+└── plot_digitizer_launcher/
     ├── README.md
-    └── scan_directory.py
+    ├── PlotDigitizer.bat
+    └── Stop PlotDigitizer.bat
 ```
 
 ## 工具
@@ -29,15 +33,16 @@ Toolbox/
 |---|---|---|
 | `academic_plot/` | 学术验证时序图；支持“多站点 × 单变量”和“单事件 × 多变量”，正式输出 SVG | Python 3.9+；NumPy、Pandas、Matplotlib |
 | `file_scan/` | 生成目录树、文件清单和扫描摘要 | Python 3.9+ 标准库 |
+| `plot_digitizer_launcher/` | 为已安装的 PlotDigitizer 提供 Windows 一键启动、浏览器打开和安全停止封装 | Windows 10/11、PowerShell；PlotDigitizer 的 Python/Node 环境已完成配置 |
 
 ## 设计原则
 
 1. **项目与工具解耦**：项目只准备标准输入和配置；通用逻辑留在本仓库。
 2. **接口稳定**：已有 CLI、输入字段和默认输出语义保持向后兼容；确需破坏性修改时升级主版本。
 3. **配置优先**：时间窗、坐标范围、站点名、变量标签、QC 规则等写入配置，不写死在核心代码。
-4. **跨环境**：统一使用 `pathlib`；不依赖固定盘符、工作目录或单一操作系统。
+4. **跨环境优先**：Python 工具统一使用 `pathlib`，不依赖固定盘符或工作目录；确需操作系统专用封装时明确平台边界，并继续避免写死绝对路径。
 5. **低依赖**：能用标准库或现有依赖解决的任务，不额外引入包。
-6. **可检查**：每个工具保留最小 smoke test 示例；错误应显式报出，不静默生成错误结果。
+6. **可检查**：每个工具保留最小 smoke test 或明确的验证记录；错误应显式报出，不静默生成错误结果。
 7. **不臃肿**：不同数据组织模式可分脚本，但不为少量逻辑无故拆分模块。
 
 ## AI / 人工维护约束
@@ -51,4 +56,4 @@ Toolbox/
 
 ## 环境建议
 
-推荐 Python 3.9–3.13。Windows、Linux、macOS 均可使用；字体不存在时绘图工具会回退到可用字体。
+Python 类工具推荐 Python 3.9–3.13；Windows、Linux、macOS 均可使用，字体不存在时绘图工具会回退到可用字体。`plot_digitizer_launcher/` 是明确的 Windows 专用封装，依赖系统 PowerShell 和已配置完成的 PlotDigitizer 环境。
