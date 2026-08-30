@@ -1,12 +1,23 @@
 {
-  "stations": ["A1", "A2", "A3", "A4"],
+  "stations": [
+    "A1",
+    "A2",
+    "A3",
+    "A4"
+  ],
   "layout": {
     "rows": 2,
     "cols": 2,
     "geometry": {
       "profile": "academic_mm_v1",
-      "panel_size_mm": [82, 54],
-      "gap_mm": [8, 10],
+      "panel_size_mm": [
+        82,
+        54
+      ],
+      "gap_mm": [
+        8,
+        10
+      ],
       "margin_mm": {
         "left": 18,
         "right": 8,
@@ -22,18 +33,47 @@
   "reference_col": "reference",
   "simulation_col": "simulation",
   "x_axis": {
-    "range": [0, 96],
-    "ticks": [0, 24, 48, 72, 96],
-    "label": "时间(h)"
+    "range": [
+      0,
+      96
+    ],
+    "ticks": [
+      0,
+      24,
+      48,
+      72,
+      96
+    ],
+    "label": "时间(h)",
+    "show_tick_labels": false,
+    "origin_timestamp": {
+      "enabled": true,
+      "text": "2014-09-15 00:00",
+      "fontsize": 9,
+      "x": 0.0,
+      "y": -0.16
+    }
   },
   "y_axis": {
-    "range": [0, 12],
-    "ticks": [0, 3, 6, 9, 12],
+    "range": [
+      0,
+      12
+    ],
+    "ticks": [
+      0,
+      3,
+      6,
+      9,
+      12
+    ],
     "label": "波高（m）"
   },
   "legend": {
     "enabled": true,
-    "labels": ["实测", "模拟"],
+    "labels": [
+      "实测",
+      "模拟"
+    ],
     "fontsize": 14,
     "shift_x_mm": 0,
     "shift_y_mm": 0
