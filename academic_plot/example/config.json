@@ -3,10 +3,8 @@
   "layout": {
     "rows": 2,
     "cols": 2,
-    "figsize_in": [10.6, 7.55],
-    "subplot_adjust": {
-      "wspace": 0.16,
-      "hspace": 0.12
+    "geometry": {
+      "profile": "academic_mm_v1"
     },
     "hide_y_label_nonfirst_col": true,
     "hide_x_label_nonlast_row": true
