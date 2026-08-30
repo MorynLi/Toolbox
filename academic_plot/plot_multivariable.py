@@ -15,6 +15,7 @@ import pandas as pd
 
 from plot_common import (
     add_embedded_legend,
+    add_origin_timestamp,
     audit_axis_range,
     break_circular,
     configure_fonts,
@@ -23,7 +24,7 @@ from plot_common import (
     save_main_figure,
 )
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 DEFAULT_STYLE: dict[str, Any] = {
     "reference_color": "#8B0000",
@@ -200,10 +201,10 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
             spine.set_linewidth(style["spine_width"])
 
         row, _ = divmod(index, cols)
-        show_x = row == rows - 1 or not layout.get("hide_x_label_nonlast_row", True)
-        ax.set_xlabel(x_axis["label"] if show_x else "", fontsize=style["axis_label_fontsize"])
-        if not show_x:
-            ax.tick_params(labelbottom=False)
+        show_x_label = row == rows - 1 or not layout.get("hide_x_label_nonlast_row", True)
+        show_x_tick_labels = bool(x_axis.get("show_tick_labels", False))
+        ax.set_xlabel(x_axis["label"] if show_x_label else "", fontsize=style["axis_label_fontsize"])
+        ax.tick_params(labelbottom=show_x_tick_labels)
 
         panel_label = panel.get("panel_label")
         if panel_label:
@@ -216,6 +217,8 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
 
     for ax in axes_flat[len(panels):]:
         ax.set_visible(False)
+
+    add_origin_timestamp(axes, layout, x_axis.get("origin_timestamp"))
 
     legend_cfg = config.get("legend", {})
     add_embedded_legend(
