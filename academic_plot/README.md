@@ -1,197 +1,198 @@
 # academic_plot
 
-科研验证时序图工具。项目侧负责准备标准 CSV 与 JSON；工具负责稳定的视觉语法、数据有效性筛选和 SVG 输出。
+科研验证时序图工具。项目侧负责准备标准 CSV 与 JSON；工具负责稳定的视觉语法、固定物理几何、方向变量断线、范围越界检查和 SVG 输出。
 
 ## 两种绘图模式
 
 | 脚本 | 适用数据组织 | 典型用途 |
 |---|---|---|
 | `plot_validation.py` | 多站点 × 单变量 | 多浮标风速、气压、波高等同变量验证 |
-| `plot_multivariable.py` | 单事件 × 多变量 | 同一事件的 Pmin/Vmax、Hs/Tp/波向等纵向组合图 |
+| `plot_multivariable.py` | 单事件 × 多变量 | 同一事件的 Pmin/Vmax、Hs/Tp/波向等组合图 |
 
-两个脚本使用同一套视觉语法，但不强行共享同一种数据结构。
+两个脚本共享 `plot_common.py` 中的字体、几何、图例、圆周断线和范围审计逻辑。
 
 ## 稳定视觉语法
 
-- 正式输出为 SVG，文字保持文本对象（`svg.fonttype=none`）。
+- 正式输出 SVG，文字保持文本对象（`svg.fonttype=none`）。
 - 参考/实测：深红色虚线 `#8B0000`；模拟：黑色实线。
-- **主图文件中不放图例对象；图例须单独输出为独立 SVG。**
+- 图例默认嵌入主图，不再单独输出。
+- 一列布局：图例位于第一行图正上方中央。
+- 两列及以上布局：图例位于第一行整个 panel block 正上方中央。
 - 白色背景、无网格、完整矩形坐标框、刻度向内，顶部和右侧保留刻度。
-- 默认不重复使用 `(a)(b)(c)(d)`。
-- 多站点模式中，第一行不重复横轴标题、非首列不重复纵轴标题。
-- 图框内标签只在确有区分意义时使用。纵轴已经表达物理量时，不再在图内重复写同义标题。
-- 数据质量说明、可靠性说明和事件时间基准由正文或图注解释；主图只负责呈现数据。
-- 风向等圆周变量可启用断线处理，避免跨 0/360° 画出伪长线。
+- 风向/波向等圆周变量可启用断线，避免跨 0/360° 画出伪长线。
+- 工具不自动补造缺失数据，不隐式插值，不对参考值做平滑拟合。
+- 实测时刻可保留小数小时，例如 `3.1 h` 就按 `3.1 h` 绘制。
 
-### 语言与字体
+## 代码结构
 
-中文论文或中文汇报默认使用中文语义文字，包括坐标轴语义标签、图例和必要注释；变量符号、单位、模型名、标准缩写和数字保留原形式。字体优先中文宋体类、英文与数字 Times New Roman；缺失时按跨平台候选字体回退。
+```text
+academic_plot/
+├─ README.md
+├─ plot_common.py             # 共享字体、几何、图例、圆周断线、范围审计
+├─ plot_validation.py         # 多站点 × 单变量
+├─ plot_multivariable.py      # 单事件 × 多变量
+├─ requirements.txt
+├─ example/
+│  ├─ config.json
+│  ├─ input.csv
+│  ├─ config_1col_a4.json
+│  ├─ config_2col.json
+│  ├─ multivariable_config.json
+│  └─ multivariable_input.csv
+└─ docs/
+   └─ MANUAL_TESTING.md
+```
 
-## 固定几何布局
+## 固定几何布局与可调参数
 
-新图推荐使用固定物理几何，而不是 `wspace` / `hspace` 相对间距。这样不同数据、不同坐标文字生成的 SVG 在相同布局下具有完全一致的画布尺寸、图框尺寸和图框间距，便于后续在 Word、PPT、Illustrator 或 Inkscape 中拼接。
-
-启用标准布局：
+推荐使用毫米几何，而不是依赖 `wspace/hspace`。
 
 ```json
 "layout": {
-  "rows": 2,
-  "cols": 2,
+  "rows": 4,
+  "cols": 1,
   "geometry": {
-    "profile": "academic_mm_v1"
+    "profile": "academic_mm_v1",
+    "panel_size_mm": [168, 50],
+    "gap_mm": [0, 8],
+    "margin_mm": {
+      "left": 26,
+      "right": 8,
+      "bottom": 14,
+      "top": 12
+    }
   }
 }
 ```
 
-`academic_mm_v1` 使用毫米作为底层几何单位：
+用户可直接调：
 
-- 单个图框：`90 × 65 mm`；
-- 水平图框间距：`18 mm`；
-- 垂直图框间距：`15 mm`；
-- 外边距：左 `22 mm`、右 `6 mm`、下 `18 mm`、上 `6 mm`。
+- `panel_size_mm = [宽, 高]`
+- `gap_mm = [横向图框间距, 纵向图框间距]`
+- `margin_mm.left/right/bottom/top`
+- `station_label.x/y` 或 `panel_label_position.x/y`
+- `legend.anchor_x_mm`
+- `legend.anchor_y_mm`
+- `legend.shift_x_mm`
+- `legend.shift_y_mm`
+- `legend.fontsize`
+- `style.observed_line_width`
+- `style.simulated_line_width`
+- `style.tick_fontsize`
+- `style.axis_label_fontsize`
 
-因此标准画布尺寸为：
+如果多张图要后续拼接，应固定完全相同的 `panel_size_mm`、`gap_mm` 与 `margin_mm`。
 
-| 布局 | SVG 基准画布尺寸 |
-|---|---|
-| `1 × 1` | `118 × 89 mm` |
-| `1 × 2` | `226 × 89 mm` |
-| `2 × 1` | `118 × 169 mm` |
-| `2 × 2` | `226 × 169 mm` |
+## 图例
 
-SVG 可以整体任意缩放。只要两个独立生成的图使用同一几何配置，并在排版时缩放到相同宽度，同列图框就会保持严格对齐。例如两张独立的 `1 × 2` 图上下拼接时，左右图框位置和中间间距完全一致。
-
-固定几何模式下不使用 `bbox_inches="tight"`，避免坐标文字长度改变 SVG 外边界。坐标文字过长导致外边距不足时，应显式增大外边距，而不是重新启用自动裁剪。
-
-### 自定义几何
-
-标准 profile 可局部覆盖：
+默认配置：
 
 ```json
-"geometry": {
-  "profile": "academic_mm_v1",
-  "panel_size_mm": [95, 68],
-  "gap_mm": [20, 16],
-  "margin_mm": {
-    "left": 24,
-    "right": 7,
-    "bottom": 19,
-    "top": 7
-  }
+"legend": {
+  "enabled": true,
+  "labels": ["实测", "模拟"],
+  "fontsize": 14,
+  "shift_x_mm": 0,
+  "shift_y_mm": 0
 }
 ```
 
-若多张图需要后续拼接，应使用完全相同的 `geometry` 配置。不同布局仍按同一单图框尺寸和间距规则推导总画布尺寸。
+固定几何模式下，代码会自动计算第一行 panel block 的水平中心。通常只需要微调 `shift_y_mm`。
 
-### 旧配置兼容
+`plot_validation.py --legend-output ...` 仅为旧流程兼容保留。新图不要使用。
 
-未提供 `layout.geometry` 时，仍沿用原来的：
+## 原始实测时刻
+
+`plot_validation.py` 支持参考值和模拟值使用不同的 x 列：
 
 ```json
-"figsize_in": [10.6, 7.55],
-"subplot_adjust": {
-  "wspace": 0.16,
-  "hspace": 0.12
-}
+"x_col": "time_h",
+"reference_x_col": "obs_time_h",
+"simulation_x_col": "sim_time_h"
 ```
 
-旧配置无需修改即可运行，但新图不建议继续依赖相对 `wspace` / `hspace` 做跨图拼接。
-
-## 参考值与模拟值的语义
-
-工具内部推荐使用 `reference` / `simulation`。`reference` 可以是实测、最佳路径、再分析、实验或其他独立基准，不限定为现场观测。
-
-`plot_validation.py` 为兼容旧配置，仍接受：
-
-- `observed_col` → `reference_col`
-- `simulated_col` → `simulation_col`
-
-旧 CSV 与旧 JSON 无需修改即可继续运行。
-
-## 1. 多站点 × 单变量
-
-最小 CSV：
+因此可以保留实测原始时间：
 
 ```text
-time_h,station,observed,simulated
-0,A1,1006.2,1006.5
-6,A1,1003.0,1003.4
+station,obs_time_h,sim_time_h,reference,simulation
+A1,3.1,,12.3,
+A1,,3.0,,12.1
 ```
+
+也可以把参考/模拟放在同一 `time_h` 列的不同稀疏行中。核心原则是不把 `3.1 h` 强制改成 `3 h`。
+
+## 坐标范围保护
+
+过去固定 y 轴时容易出现真实数据超出图框。现在可启用：
+
+```json
+"range_guard": {
+  "mode": "error"
+}
+```
+
+选项：
+
+- `error`：发现越界直接停止绘图，适合正式出图。
+- `warn`：发出 warning 后继续。
+- `off`：不检查。
+
+推荐正式出图使用 `error`。
+
+## 1. 多站点 × 单变量
 
 运行：
 
 ```bash
 python plot_validation.py \
   --input example/input.csv \
-  --config example/config.json \
-  --output validation.svg \
-  --legend-output legend.svg
+  --config example/config_1col_a4.json \
+  --output validation.svg
 ```
 
-站点标签默认显示，可通过：
+兼容旧配置：
 
-```json
-"station_label": {"enabled": false}
-```
-
-关闭。
-
-### 可选 QC 筛选
-
-参考值或模拟值可各自设置有效性条件：
-
-```json
-"simulation_valid": {
-  "column": "sim_ok",
-  "values": [1]
-}
-```
-
-QC 只控制哪些点进入曲线，不自动在主图中添加说明文字。
+- `observed_col` → `reference_col`
+- `simulated_col` → `simulation_col`
+- `style.line_width` 同时作用于两条曲线
 
 ## 2. 单事件 × 多变量
 
-`plot_multivariable.py` 允许每个 panel 使用独立的纵轴、数据列、QC 条件和圆周变量规则。
-
-最小配置见 `example/multivariable_config.json`，运行：
+运行：
 
 ```bash
 python plot_multivariable.py \
   --input example/multivariable_input.csv \
   --config example/multivariable_config.json \
-  --output multivariable.svg \
-  --legend-output multivariable_legend.svg
+  --output multivariable.svg
 ```
 
-每个 panel 至少包含：
+每个 panel 可以独立设置：
 
-```json
-{
-  "reference_col": "pressure_reference",
-  "simulation_col": "pressure_simulation",
-  "y_axis": {
-    "range": [990, 1010],
-    "ticks": [990, 995, 1000, 1005, 1010],
-    "label": "P（hPa）"
-  }
-}
+- `reference_col`
+- `simulation_col`
+- `y_axis`
+- `circular`
+- `reference_valid`
+- `simulation_valid`
+- `panel_label`
+
+## 人工测试
+
+详细流程见：
+
+```text
+docs/MANUAL_TESTING.md
 ```
 
-`panel_label` 默认为空；仅当站点名、方案名等信息确有必要时才设置。
+人工检查重点包括：
 
-### 绝对时间转相对时间
-
-若 CSV 保存真实时间，可在配置中直接转换为相对时间：
-
-```json
-"time_transform": {
-  "datetime_col": "time_utc",
-  "origin": "2020-01-01 00:00:00",
-  "unit": "h"
-}
-```
-
-这样数据保留真实时间，图上可统一使用 `时间（h）`。支持 `s`、`min`、`h`、`d`。
+1. 数据 min/max 是否落在轴范围内。
+2. 实测原始时间是否被改写。
+3. 图例是否位于第一行图框上方中央且不与图框重叠。
+4. 一列、两列布局能否保持严格对齐。
+5. 方向变量是否正确断开 0/360° 伪跳变。
+6. SVG 画布尺寸是否随着不同数据内容保持不变。
 
 ## 安装
 
@@ -202,8 +203,7 @@ python -m pip install -r requirements.txt
 
 ## 维护约束
 
-- 不在核心代码中写具体课题路径、事件时间、站点数据或最佳路径真值。
+- 不在核心代码中写具体课题路径、事件时间或站点真值。
 - 不自动补造缺失数据，不隐式插值。
-- 视觉语法修改应视为版本变更；数据接口新增应优先保持向后兼容。
-- `reference` 的名称可由图例配置成“实测”“最佳路径”“再分析”等；核心代码不绑定具体来源。
-- 单文件逻辑能够清楚表达时保持单文件，不为形式上的“架构”增加层级。
+- 参考值曲线的连线只表示相邻原始点的视觉连接，不代表数学拟合。
+- 视觉语法修改视为版本变更，并尽量保持旧配置可运行。
