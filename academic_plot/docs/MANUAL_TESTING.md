@@ -98,7 +98,7 @@ data = 31
 
 - 检查 SVG width/height 相同。
 - 检查每个坐标框的 x/y/width/height 相同。
-- 固定几何输出不使用 `bbox_inches="tight"`。
+- 不使用 `bbox_inches="tight"` 的固定几何输出。
 
 ## 9. 回归测试最小集合
 
@@ -114,9 +114,20 @@ data = 31
 
 ## 10. 常见问题定位
 
-- 图例压住图框：增大 `margin_mm.top` 或调整 `legend.shift_y_mm`。
+- 图例压住图框：增大 `margin_mm.top` 或上移/下移 `legend.shift_y_mm`。
 - 左侧标签被裁：增大 `margin_mm.left`。
 - 底部标签被裁：增大 `margin_mm.bottom`。
 - 两张图拼不齐：核对 `panel_size_mm / gap_mm / margin_mm` 是否逐项一致。
 - 数据被裁：开启 `range_guard=error`，不要靠肉眼发现。
 - 实测曲线显得太折：这是原始离散点的直线连接，不应为了平滑而拟合。
+
+## 11. 起始时间戳与横轴刻度标签
+
+人工检查：
+
+1. 时间戳只出现一次。
+2. 时间戳位于最底行左侧 x=0 下方，不应落出固定 SVG 画布。
+3. 时间戳不加“起始时间”“起始：”前缀。
+4. 默认所有 panel 都不显示横轴数字刻度标签，避免同一布局有的显示、有的不显示。
+5. 最底行仍保留 `时间(h)` 轴标题。
+6. 如果修改 `origin_timestamp.y`，优先在 `-0.10 ~ -0.18` 之间微调；过低可能被固定几何画布裁掉。
