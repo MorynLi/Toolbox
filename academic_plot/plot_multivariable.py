@@ -12,24 +12,26 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib import font_manager, rcParams
 
-__version__ = "1.1.0"
+from plot_common import (
+    add_embedded_legend,
+    audit_axis_range,
+    break_circular,
+    configure_fonts,
+    make_figure_axes,
+    resolve_geometry,
+    save_main_figure,
+)
 
-MM_PER_INCH = 25.4
-STANDARD_GEOMETRY_PROFILE = "academic_mm_v1"
-STANDARD_GEOMETRY_MM: dict[str, Any] = {
-    "panel_size_mm": [90.0, 65.0],
-    "gap_mm": [18.0, 15.0],
-    "margin_mm": {"left": 22.0, "right": 6.0, "bottom": 18.0, "top": 6.0},
-}
+__version__ = "1.2.0"
 
 DEFAULT_STYLE: dict[str, Any] = {
     "reference_color": "#8B0000",
     "reference_linestyle": "--",
     "simulation_color": "#000000",
     "simulation_linestyle": "-",
-    "line_width": 1.9,
+    "reference_line_width": 1.6,
+    "simulation_line_width": 1.8,
     "spine_width": 1.15,
     "tick_width": 1.0,
     "tick_length": 4.0,
@@ -43,150 +45,21 @@ TIME_UNIT_SECONDS = {"s": 1.0, "min": 60.0, "h": 3600.0, "d": 86400.0}
 PLOT_X = "__plot_x__"
 
 
-def pick_font(candidates: list[str], fallback: str) -> str:
-    installed = {font.name for font in font_manager.fontManager.ttflist}
-    return next((name for name in candidates if name in installed), fallback)
-
-
-def configure_fonts() -> None:
-    latin = pick_font(
-        ["Times New Roman", "Times New Roman PS MT", "Nimbus Roman", "Liberation Serif", "DejaVu Serif"],
-        "DejaVu Serif",
-    )
-    chinese = pick_font(
-        ["SimSun", "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "AR PL SungtiL GB"],
-        "DejaVu Serif",
-    )
-    rcParams.update(
-        {
-            "font.family": [latin, chinese],
-            "axes.unicode_minus": False,
-            "svg.fonttype": "none",
-            "xtick.direction": "in",
-            "ytick.direction": "in",
-            "xtick.top": True,
-            "ytick.right": True,
-        }
-    )
-
-
-def break_circular(x: np.ndarray, y: np.ndarray, jump: float = 180.0) -> tuple[np.ndarray, np.ndarray]:
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    if x.size == 0:
-        return x, y
-    if x.size != y.size:
-        raise ValueError("Circular x/y arrays must have the same length.")
-
-    breaks = np.zeros(y.size, dtype=bool)
-    breaks[1:] = np.isnan(y[1:]) | np.isnan(y[:-1]) | (np.abs(np.diff(y)) > jump)
-    if not breaks.any():
-        return x, y
-
-    out_size = x.size + int(breaks.sum())
-    xo = np.empty(out_size, dtype=float)
-    yo = np.empty(out_size, dtype=float)
-    src_i = 0
-    dst_i = 0
-    for is_break in breaks:
-        if is_break:
-            xo[dst_i] = np.nan
-            yo[dst_i] = np.nan
-            dst_i += 1
-        xo[dst_i] = x[src_i]
-        yo[dst_i] = y[src_i]
-        src_i += 1
-        dst_i += 1
-    return xo, yo
-
-
 def load_config(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as file:
         config = json.load(file)
-
     missing = REQUIRED_CONFIG_KEYS - config.keys()
     if missing:
         raise ValueError(f"Config missing required keys: {', '.join(sorted(missing))}")
 
     style = DEFAULT_STYLE.copy()
     style.update(config.get("style", {}))
+    if "line_width" in config.get("style", {}):
+        legacy_width = float(config["style"]["line_width"])
+        style["reference_line_width"] = legacy_width
+        style["simulation_line_width"] = legacy_width
     config["style"] = style
     return config
-
-
-def resolve_geometry(layout: dict[str, Any]) -> dict[str, Any] | None:
-    geometry = layout.get("geometry")
-    if geometry is None:
-        return None
-    if not isinstance(geometry, dict):
-        raise ValueError("layout.geometry must be an object.")
-
-    profile = str(geometry.get("profile", STANDARD_GEOMETRY_PROFILE))
-    if profile != STANDARD_GEOMETRY_PROFILE:
-        raise ValueError(f"Unsupported geometry profile '{profile}'.")
-
-    panel_size = geometry.get("panel_size_mm", STANDARD_GEOMETRY_MM["panel_size_mm"])
-    gap = geometry.get("gap_mm", STANDARD_GEOMETRY_MM["gap_mm"])
-    if not isinstance(panel_size, list) or len(panel_size) != 2:
-        raise ValueError("layout.geometry.panel_size_mm must be [width, height].")
-    if not isinstance(gap, list) or len(gap) != 2:
-        raise ValueError("layout.geometry.gap_mm must be [x, y].")
-
-    margin = dict(STANDARD_GEOMETRY_MM["margin_mm"])
-    margin_override = geometry.get("margin_mm", {})
-    if not isinstance(margin_override, dict):
-        raise ValueError("layout.geometry.margin_mm must be an object.")
-    margin.update(margin_override)
-
-    panel_w, panel_h = map(float, panel_size)
-    gap_x, gap_y = map(float, gap)
-    margin = {key: float(margin[key]) for key in ("left", "right", "bottom", "top")}
-    if panel_w <= 0 or panel_h <= 0:
-        raise ValueError("Panel width and height must be positive.")
-    if gap_x < 0 or gap_y < 0 or any(value < 0 for value in margin.values()):
-        raise ValueError("Gaps and margins must be non-negative.")
-
-    return {
-        "profile": profile,
-        "panel_size_mm": [panel_w, panel_h],
-        "gap_mm": [gap_x, gap_y],
-        "margin_mm": margin,
-    }
-
-
-def make_figure_axes(rows: int, cols: int, layout: dict[str, Any]) -> tuple[plt.Figure, np.ndarray, bool]:
-    geometry = resolve_geometry(layout)
-    if geometry is None:
-        figsize = layout.get("figsize_in", [7.2, 5.6])
-        fig, axes = plt.subplots(rows, cols, figsize=figsize, squeeze=False)
-        fig.subplots_adjust(**layout.get("subplot_adjust", {}))
-        return fig, axes, False
-
-    panel_w, panel_h = geometry["panel_size_mm"]
-    gap_x, gap_y = geometry["gap_mm"]
-    margin = geometry["margin_mm"]
-    canvas_w = margin["left"] + cols * panel_w + (cols - 1) * gap_x + margin["right"]
-    canvas_h = margin["bottom"] + rows * panel_h + (rows - 1) * gap_y + margin["top"]
-
-    fig = plt.figure(figsize=(canvas_w / MM_PER_INCH, canvas_h / MM_PER_INCH))
-    axes = np.empty((rows, cols), dtype=object)
-    for row in range(rows):
-        for col in range(cols):
-            left_mm = margin["left"] + col * (panel_w + gap_x)
-            bottom_mm = margin["bottom"] + (rows - 1 - row) * (panel_h + gap_y)
-            axes[row, col] = fig.add_axes(
-                [left_mm / canvas_w, bottom_mm / canvas_h, panel_w / canvas_w, panel_h / canvas_h]
-            )
-    return fig, axes, True
-
-
-def save_main_figure(fig: plt.Figure, output: Path, fixed_geometry: bool) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    if fixed_geometry:
-        fig.savefig(output, format="svg", facecolor="white")
-    else:
-        fig.savefig(output, format="svg", facecolor="white", bbox_inches="tight", pad_inches=0.03)
-    plt.close(fig)
 
 
 def prepare_x(data: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
@@ -217,7 +90,6 @@ def validate_inputs(data: pd.DataFrame, config: dict[str, Any]) -> None:
     rows = int(config["layout"]["rows"])
     cols = int(config["layout"]["cols"])
     panels = config["panels"]
-
     if rows <= 0 or cols <= 0:
         raise ValueError("layout.rows and layout.cols must be positive integers.")
     if not isinstance(panels, list) or not panels:
@@ -238,7 +110,6 @@ def validate_inputs(data: pd.DataFrame, config: dict[str, Any]) -> None:
             rule = panel.get(key)
             if rule:
                 required.add(str(rule["column"]))
-
     missing = required - set(data.columns)
     if missing:
         raise ValueError(f"Input CSV missing columns: {', '.join(sorted(missing))}")
@@ -279,9 +150,10 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
     rows = int(layout["rows"])
     cols = int(layout["cols"])
 
-    fig, axes, fixed_geometry = make_figure_axes(rows, cols, layout)
+    fig, axes, fixed_geometry, geometry = make_figure_axes(rows, cols, layout)
     axes_flat = axes.ravel()
     x_axis = config["x_axis"]
+    range_mode = str(config.get("range_guard", {}).get("mode", "warn"))
 
     for index, panel in enumerate(panels):
         ax = axes_flat[index]
@@ -294,24 +166,21 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
         reference = panel_series(data, panel, "reference_col", "reference_valid")
         simulation = panel_series(data, panel, "simulation_col", "simulation_valid")
 
+        audit_axis_range(reference[reference_col].to_numpy(), y_axis["range"], name=f"panel {index+1} reference", mode=range_mode)
+        audit_axis_range(simulation[simulation_col].to_numpy(), y_axis["range"], name=f"panel {index+1} simulation", mode=range_mode)
+
         plot_series(
-            ax,
-            reference,
-            reference_col,
-            circular=circular,
-            jump=circular_jump,
+            ax, reference, reference_col,
+            circular=circular, jump=circular_jump,
             color=style["reference_color"],
-            linewidth=style["line_width"],
+            linewidth=style["reference_line_width"],
             linestyle=style["reference_linestyle"],
         )
         plot_series(
-            ax,
-            simulation,
-            simulation_col,
-            circular=circular,
-            jump=circular_jump,
+            ax, simulation, simulation_col,
+            circular=circular, jump=circular_jump,
             color=style["simulation_color"],
-            linewidth=style["line_width"],
+            linewidth=style["simulation_line_width"],
             linestyle=style["simulation_linestyle"],
         )
 
@@ -322,13 +191,10 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
         ax.set_ylabel(y_axis["label"], fontsize=style["axis_label_fontsize"])
         ax.grid(False)
         ax.tick_params(
-            direction="in",
-            top=True,
-            right=True,
+            direction="in", top=True, right=True,
             labelsize=style["tick_fontsize"],
             width=style["tick_width"],
-            length=style["tick_length"],
-            pad=2,
+            length=style["tick_length"], pad=2,
         )
         for spine in ax.spines.values():
             spine.set_linewidth(style["spine_width"])
@@ -343,56 +209,34 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
         if panel_label:
             label_cfg = panel.get("panel_label_position", {})
             ax.text(
-                label_cfg.get("x", 0.03),
-                label_cfg.get("y", 0.97),
-                str(panel_label),
-                transform=ax.transAxes,
-                ha="left",
-                va="top",
-                fontsize=style["panel_label_fontsize"],
+                label_cfg.get("x", 0.03), label_cfg.get("y", 0.97),
+                str(panel_label), transform=ax.transAxes,
+                ha="left", va="top", fontsize=style["panel_label_fontsize"],
             )
 
-    for ax in axes_flat[len(panels) :]:
+    for ax in axes_flat[len(panels):]:
         ax.set_visible(False)
+
+    legend_cfg = config.get("legend", {})
+    add_embedded_legend(
+        fig,
+        layout,
+        geometry,
+        labels=legend_cfg.get("labels", ["参考", "模拟"]),
+        colors=[style["reference_color"], style["simulation_color"]],
+        linestyles=[style["reference_linestyle"], style["simulation_linestyle"]],
+        linewidths=[style["reference_line_width"], style["simulation_line_width"]],
+        legend_cfg=legend_cfg,
+    )
 
     save_main_figure(fig, output, fixed_geometry)
 
 
-def draw_legend(config: dict[str, Any], output: Path) -> None:
-    configure_fonts()
-    style = config["style"]
-    legend = config.get("legend", {})
-    fig = plt.figure(figsize=legend.get("figsize_in", [3.2, 0.9]))
-    ax = fig.add_axes([0, 0, 1, 1])
-    ax.axis("off")
-
-    handles = [
-        plt.Line2D([0], [0], color=style["reference_color"], linewidth=legend.get("line_width", 2.0), linestyle=style["reference_linestyle"]),
-        plt.Line2D([0], [0], color=style["simulation_color"], linewidth=legend.get("line_width", 2.0), linestyle=style["simulation_linestyle"]),
-    ]
-    ax.legend(
-        handles,
-        legend.get("labels", ["参考", "模拟"]),
-        loc="center",
-        ncol=2,
-        frameon=False,
-        fontsize=legend.get("fontsize", 14),
-        handlelength=legend.get("handlelength", 4.2),
-        handletextpad=legend.get("handletextpad", 0.6),
-        columnspacing=legend.get("columnspacing", 2.0),
-    )
-
-    output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output, format="svg", facecolor="white", bbox_inches="tight", pad_inches=0.03)
-    plt.close(fig)
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, required=True, help="Prepared CSV with panel reference/simulation columns.")
-    parser.add_argument("--config", type=Path, required=True, help="JSON plot configuration.")
-    parser.add_argument("--output", type=Path, required=True, help="Main SVG output path.")
-    parser.add_argument("--legend-output", type=Path, default=None, help="Optional standalone legend SVG path.")
+    parser.add_argument("--input", type=Path, required=True)
+    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser.parse_args()
 
@@ -402,8 +246,6 @@ def main() -> None:
     data = pd.read_csv(args.input)
     config = load_config(args.config)
     draw_main(data, config, args.output)
-    if args.legend_output is not None:
-        draw_legend(config, args.legend_output)
 
 
 if __name__ == "__main__":
