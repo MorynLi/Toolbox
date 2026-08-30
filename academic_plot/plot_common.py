@@ -221,6 +221,38 @@ def add_embedded_legend(
     )
 
 
+def add_origin_timestamp(
+    axes: np.ndarray,
+    layout: dict[str, Any],
+    timestamp_cfg: dict[str, Any] | None,
+) -> None:
+    """Draw one compact origin timestamp below the bottom-left panel.
+
+    The text is placed near the x=0 side and close to the x-axis label band.
+    It is intentionally rendered once per multi-panel figure.
+    """
+    timestamp_cfg = timestamp_cfg or {}
+    if not timestamp_cfg.get("enabled", False):
+        return
+
+    text = str(timestamp_cfg.get("text", "")).strip()
+    if not text:
+        return
+
+    rows = int(layout["rows"])
+    ax = axes[rows - 1, 0]
+    ax.text(
+        float(timestamp_cfg.get("x", 0.0)),
+        float(timestamp_cfg.get("y", -0.16)),
+        text,
+        transform=ax.transAxes,
+        ha=timestamp_cfg.get("ha", "left"),
+        va=timestamp_cfg.get("va", "top"),
+        fontsize=float(timestamp_cfg.get("fontsize", 9)),
+        clip_on=False,
+    )
+
+
 def audit_axis_range(
     values: np.ndarray,
     axis_range: list[float],
