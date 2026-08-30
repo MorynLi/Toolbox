@@ -14,7 +14,15 @@ import numpy as np
 import pandas as pd
 from matplotlib import font_manager, rcParams
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
+
+MM_PER_INCH = 25.4
+STANDARD_GEOMETRY_PROFILE = "academic_mm_v1"
+STANDARD_GEOMETRY_MM: dict[str, Any] = {
+    "panel_size_mm": [90.0, 65.0],
+    "gap_mm": [18.0, 15.0],
+    "margin_mm": {"left": 22.0, "right": 6.0, "bottom": 18.0, "top": 6.0},
+}
 
 DEFAULT_STYLE: dict[str, Any] = {
     "reference_color": "#8B0000",
@@ -106,6 +114,81 @@ def load_config(path: Path) -> dict[str, Any]:
     return config
 
 
+def resolve_geometry(layout: dict[str, Any]) -> dict[str, Any] | None:
+    geometry = layout.get("geometry")
+    if geometry is None:
+        return None
+    if not isinstance(geometry, dict):
+        raise ValueError("layout.geometry must be an object.")
+
+    profile = str(geometry.get("profile", STANDARD_GEOMETRY_PROFILE))
+    if profile != STANDARD_GEOMETRY_PROFILE:
+        raise ValueError(f"Unsupported geometry profile '{profile}'.")
+
+    panel_size = geometry.get("panel_size_mm", STANDARD_GEOMETRY_MM["panel_size_mm"])
+    gap = geometry.get("gap_mm", STANDARD_GEOMETRY_MM["gap_mm"])
+    if not isinstance(panel_size, list) or len(panel_size) != 2:
+        raise ValueError("layout.geometry.panel_size_mm must be [width, height].")
+    if not isinstance(gap, list) or len(gap) != 2:
+        raise ValueError("layout.geometry.gap_mm must be [x, y].")
+
+    margin = dict(STANDARD_GEOMETRY_MM["margin_mm"])
+    margin_override = geometry.get("margin_mm", {})
+    if not isinstance(margin_override, dict):
+        raise ValueError("layout.geometry.margin_mm must be an object.")
+    margin.update(margin_override)
+
+    panel_w, panel_h = map(float, panel_size)
+    gap_x, gap_y = map(float, gap)
+    margin = {key: float(margin[key]) for key in ("left", "right", "bottom", "top")}
+    if panel_w <= 0 or panel_h <= 0:
+        raise ValueError("Panel width and height must be positive.")
+    if gap_x < 0 or gap_y < 0 or any(value < 0 for value in margin.values()):
+        raise ValueError("Gaps and margins must be non-negative.")
+
+    return {
+        "profile": profile,
+        "panel_size_mm": [panel_w, panel_h],
+        "gap_mm": [gap_x, gap_y],
+        "margin_mm": margin,
+    }
+
+
+def make_figure_axes(rows: int, cols: int, layout: dict[str, Any]) -> tuple[plt.Figure, np.ndarray, bool]:
+    geometry = resolve_geometry(layout)
+    if geometry is None:
+        figsize = layout.get("figsize_in", [7.2, 5.6])
+        fig, axes = plt.subplots(rows, cols, figsize=figsize, squeeze=False)
+        fig.subplots_adjust(**layout.get("subplot_adjust", {}))
+        return fig, axes, False
+
+    panel_w, panel_h = geometry["panel_size_mm"]
+    gap_x, gap_y = geometry["gap_mm"]
+    margin = geometry["margin_mm"]
+    canvas_w = margin["left"] + cols * panel_w + (cols - 1) * gap_x + margin["right"]
+    canvas_h = margin["bottom"] + rows * panel_h + (rows - 1) * gap_y + margin["top"]
+
+    fig = plt.figure(figsize=(canvas_w / MM_PER_INCH, canvas_h / MM_PER_INCH))
+    axes = np.empty((rows, cols), dtype=object)
+    for row in range(rows):
+        for col in range(cols):
+            left_mm = margin["left"] + col * (panel_w + gap_x)
+            bottom_mm = margin["bottom"] + (rows - 1 - row) * (panel_h + gap_y)
+            axes[row, col] = fig.add_axes(
+                [left_mm / canvas_w, bottom_mm / canvas_h, panel_w / canvas_w, panel_h / canvas_h]
+            )
+    return fig, axes, True
+
+
+def save_main_figure(fig: plt.Figure, output: Path, fixed_geometry: bool) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if fixed_geometry:
+        fig.savefig(output, format="svg", facecolor="white")
+    else:
+        fig.savefig(output, format="svg", facecolor="white", bbox_inches="tight", pad_inches=0.03)
+    plt.close(fig)
+
+
 def prepare_x(data: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
     output = data.copy()
     transform = config.get("time_transform")
@@ -141,6 +224,7 @@ def validate_inputs(data: pd.DataFrame, config: dict[str, Any]) -> None:
         raise ValueError("panels must be a non-empty list.")
     if len(panels) > rows * cols:
         raise ValueError("Panel count exceeds available subplot slots (rows × cols).")
+    resolve_geometry(config["layout"])
 
     required: set[str] = set()
     for panel in panels:
@@ -194,12 +278,9 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
     panels = config["panels"]
     rows = int(layout["rows"])
     cols = int(layout["cols"])
-    figsize = layout.get("figsize_in", [7.2, 5.6])
 
-    fig, axes = plt.subplots(rows, cols, figsize=figsize, squeeze=False)
+    fig, axes, fixed_geometry = make_figure_axes(rows, cols, layout)
     axes_flat = axes.ravel()
-    fig.subplots_adjust(**layout.get("subplot_adjust", {}))
-
     x_axis = config["x_axis"]
 
     for index, panel in enumerate(panels):
@@ -274,9 +355,7 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
     for ax in axes_flat[len(panels) :]:
         ax.set_visible(False)
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output, format="svg", facecolor="white", bbox_inches="tight", pad_inches=0.03)
-    plt.close(fig)
+    save_main_figure(fig, output, fixed_geometry)
 
 
 def draw_legend(config: dict[str, Any], output: Path) -> None:
