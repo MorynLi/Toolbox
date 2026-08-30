@@ -15,6 +15,7 @@ import pandas as pd
 
 from plot_common import (
     add_embedded_legend,
+    add_origin_timestamp,
     audit_axis_range,
     break_circular,
     configure_fonts,
@@ -23,7 +24,7 @@ from plot_common import (
     save_main_figure,
 )
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 
 DEFAULT_STYLE: dict[str, Any] = {
     "observed_color": "#8B0000",
@@ -219,11 +220,11 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
 
         row, col = divmod(index, cols)
         show_y = col == 0 or not config["layout"].get("hide_y_label_nonfirst_col", True)
-        show_x = row == rows - 1 or not config["layout"].get("hide_x_label_nonlast_row", True)
+        show_x_label = row == rows - 1 or not config["layout"].get("hide_x_label_nonlast_row", True)
+        show_x_tick_labels = bool(x_axis.get("show_tick_labels", False))
         ax.set_ylabel(y_axis["label"] if show_y else "", fontsize=style["axis_label_fontsize"])
-        ax.set_xlabel(x_axis["label"] if show_x else "", fontsize=style["axis_label_fontsize"])
-        if not show_x:
-            ax.tick_params(labelbottom=False)
+        ax.set_xlabel(x_axis["label"] if show_x_label else "", fontsize=style["axis_label_fontsize"])
+        ax.tick_params(labelbottom=show_x_tick_labels)
 
         label_cfg = config.get("station_label", {})
         if label_cfg.get("enabled", True):
@@ -239,6 +240,8 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
 
     for ax in axes_flat[len(stations):]:
         ax.set_visible(False)
+
+    add_origin_timestamp(axes, config["layout"], x_axis.get("origin_timestamp"))
 
     legend_cfg = config.get("legend", {})
     add_embedded_legend(
