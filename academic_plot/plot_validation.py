@@ -14,17 +14,21 @@ import numpy as np
 import pandas as pd
 
 from plot_common import (
+    add_bottom_time_band,
     add_embedded_legend,
-    add_origin_timestamp,
     audit_axis_range,
     break_circular,
+    clip_and_rebase_xy,
     configure_fonts,
     make_figure_axes,
     resolve_geometry,
+    resolve_x_window,
     save_main_figure,
+    x_axis_for_window,
+    x_tick_labels_visible,
 )
 
-__version__ = "1.3.1"
+__version__ = "1.4.0"
 
 DEFAULT_STYLE: dict[str, Any] = {
     "observed_color": "#8B0000",
@@ -119,18 +123,27 @@ def apply_validity(frame: pd.DataFrame, rule: dict[str, Any] | None) -> pd.DataF
     return frame.loc[frame[column].isin(values)]
 
 
-def plot_series(
-    ax: plt.Axes,
-    x: np.ndarray,
-    y: np.ndarray,
-    *,
-    circular: bool,
-    jump: float,
-    **kwargs: Any,
-) -> None:
+def plot_series(ax: plt.Axes, x: np.ndarray, y: np.ndarray, *, circular: bool, jump: float, **kwargs: Any) -> None:
     if circular:
         x, y = break_circular(x, y, jump)
     ax.plot(x, y, **kwargs)
+
+
+def prepare_station_series(data: pd.DataFrame, config: dict[str, Any]) -> dict[str, tuple[pd.DataFrame, pd.DataFrame]]:
+    station_col = str(config.get("station_col", "station"))
+    reference_x_col, simulation_x_col = series_x_columns(config)
+    reference_col, simulation_col = series_columns(config)
+    prepared: dict[str, tuple[pd.DataFrame, pd.DataFrame]] = {}
+    for station in config["stations"]:
+        station_data = data.loc[data[station_col].astype(str).eq(str(station))]
+        reference = apply_validity(station_data, config.get("reference_valid"))[
+            [reference_x_col, reference_col]
+        ].dropna().sort_values(reference_x_col)
+        simulation = apply_validity(station_data, config.get("simulation_valid"))[
+            [simulation_x_col, simulation_col]
+        ].dropna().sort_values(simulation_x_col)
+        prepared[str(station)] = (reference, simulation)
+    return prepared
 
 
 def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
@@ -138,47 +151,45 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
     validate_inputs(data, config)
 
     style = config["style"]
-    stations = config["stations"]
-    rows = int(config["layout"]["rows"])
-    cols = int(config["layout"]["cols"])
-
-    fig, axes, fixed_geometry, geometry = make_figure_axes(rows, cols, config["layout"])
-    axes_flat = axes.ravel()
-
-    station_col = str(config.get("station_col", "station"))
+    stations = [str(v) for v in config["stations"]]
+    layout = config["layout"]
+    rows = int(layout["rows"])
+    cols = int(layout["cols"])
     reference_x_col, simulation_x_col = series_x_columns(config)
     reference_col, simulation_col = series_columns(config)
-    x_axis = config["x_axis"]
+
+    prepared = prepare_station_series(data, config)
+    series_x: list[np.ndarray] = []
+    for station in stations:
+        reference, simulation = prepared[station]
+        series_x.extend([reference[reference_x_col].to_numpy(), simulation[simulation_x_col].to_numpy()])
+
+    window_cfg = config.get("x_window")
+    window = resolve_x_window(series_x, window_cfg)
+    if window is not None:
+        start, end, rebase = window
+        for station in stations:
+            reference, simulation = prepared[station]
+            prepared[station] = (
+                clip_and_rebase_xy(reference, reference_x_col, start, end, rebase),
+                clip_and_rebase_xy(simulation, simulation_x_col, start, end, rebase),
+            )
+
+    x_axis = x_axis_for_window(config["x_axis"], window, window_cfg)
     y_axis = config["y_axis"]
     circular = bool(config.get("circular", False))
     circular_jump = float(config.get("circular_jump_deg", 180.0))
-    range_guard = config.get("range_guard", {})
-    range_mode = str(range_guard.get("mode", "warn"))
+    range_mode = str(config.get("range_guard", {}).get("mode", "warn"))
+
+    fig, axes, fixed_geometry, geometry = make_figure_axes(rows, cols, layout)
+    axes_flat = axes.ravel()
 
     for index, station in enumerate(stations):
         ax = axes_flat[index]
-        station_data = data.loc[data[station_col].astype(str).eq(str(station))]
+        reference, simulation = prepared[station]
 
-        reference = apply_validity(station_data, config.get("reference_valid"))[
-            [reference_x_col, reference_col]
-        ].dropna().sort_values(reference_x_col)
-
-        simulation = apply_validity(station_data, config.get("simulation_valid"))[
-            [simulation_x_col, simulation_col]
-        ].dropna().sort_values(simulation_x_col)
-
-        audit_axis_range(
-            reference[reference_col].to_numpy(),
-            y_axis["range"],
-            name=f"{station} reference",
-            mode=range_mode,
-        )
-        audit_axis_range(
-            simulation[simulation_col].to_numpy(),
-            y_axis["range"],
-            name=f"{station} simulation",
-            mode=range_mode,
-        )
+        audit_axis_range(reference[reference_col].to_numpy(), y_axis["range"], name=f"{station} reference", mode=range_mode)
+        audit_axis_range(simulation[simulation_col].to_numpy(), y_axis["range"], name=f"{station} simulation", mode=range_mode)
 
         plot_series(
             ax,
@@ -219,19 +230,17 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
             spine.set_linewidth(style["spine_width"])
 
         row, col = divmod(index, cols)
-        show_y = col == 0 or not config["layout"].get("hide_y_label_nonfirst_col", True)
-        show_x_label = row == rows - 1 or not config["layout"].get("hide_x_label_nonlast_row", True)
-        show_x_tick_labels = bool(x_axis.get("show_tick_labels", False))
+        show_y = col == 0 or not layout.get("hide_y_label_nonfirst_col", True)
         ax.set_ylabel(y_axis["label"] if show_y else "", fontsize=style["axis_label_fontsize"])
-        ax.set_xlabel(x_axis["label"] if show_x_label else "", fontsize=style["axis_label_fontsize"])
-        ax.tick_params(labelbottom=show_x_tick_labels)
+        ax.set_xlabel("")
+        ax.tick_params(labelbottom=x_tick_labels_visible(row, rows, x_axis))
 
         label_cfg = config.get("station_label", {})
         if label_cfg.get("enabled", True):
             ax.text(
                 label_cfg.get("x", 0.03),
                 label_cfg.get("y", 0.97),
-                str(station),
+                station,
                 transform=ax.transAxes,
                 ha="left",
                 va="top",
@@ -241,12 +250,12 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
     for ax in axes_flat[len(stations):]:
         ax.set_visible(False)
 
-    add_origin_timestamp(axes, config["layout"], x_axis.get("origin_timestamp"))
+    add_bottom_time_band(fig, axes, layout, geometry, x_axis, axis_label_fontsize=style["axis_label_fontsize"])
 
     legend_cfg = config.get("legend", {})
     add_embedded_legend(
         fig,
-        config["layout"],
+        layout,
         geometry,
         labels=legend_cfg.get("labels", ["实测", "模拟"]),
         colors=[style["observed_color"], style["simulated_color"]],
@@ -270,14 +279,7 @@ def draw_legacy_legend(config: dict[str, Any], output: Path) -> None:
         plt.Line2D([0], [0], color=style["observed_color"], linewidth=style["observed_line_width"], linestyle=style["observed_linestyle"]),
         plt.Line2D([0], [0], color=style["simulated_color"], linewidth=style["simulated_line_width"], linestyle=style["simulated_linestyle"]),
     ]
-    ax.legend(
-        handles,
-        legend.get("labels", ["实测", "模拟"]),
-        loc="center",
-        ncol=2,
-        frameon=False,
-        fontsize=legend.get("fontsize", 14),
-    )
+    ax.legend(handles, legend.get("labels", ["实测", "模拟"]), loc="center", ncol=2, frameon=False, fontsize=legend.get("fontsize", 14))
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, format="svg", facecolor="white", bbox_inches="tight", pad_inches=0.03)
     plt.close(fig)

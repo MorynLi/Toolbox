@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Shared layout, legend, axis-audit, font, and circular-series utilities."""
+"""Shared layout, legend, time-axis, range-audit, font, and circular-series utilities."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 import warnings
 
 import matplotlib.pyplot as plt
@@ -160,11 +160,7 @@ def add_embedded_legend(
     linewidths: list[float],
     legend_cfg: dict[str, Any] | None = None,
 ) -> None:
-    """Put one legend above the first row and centered over the panel block.
-
-    One-column layout: centered over the first panel.
-    Two-or-more-column layout: centered over the whole first-row panel block.
-    """
+    """Put one legend above the first row and centered over the panel block."""
     legend_cfg = legend_cfg or {}
     if not legend_cfg.get("enabled", True):
         return
@@ -221,45 +217,203 @@ def add_embedded_legend(
     )
 
 
-def add_origin_timestamp(
+def x_tick_labels_visible(row: int, rows: int, x_axis: dict[str, Any]) -> bool:
+    """Return whether numeric x tick labels should be shown for a row.
+
+    Stable default: bottom row only. A one-row figure therefore keeps its tick labels.
+    """
+    policy = x_axis.get("tick_label_policy")
+    if policy is None:
+        legacy = x_axis.get("show_tick_labels")
+        if legacy is True:
+            policy = "all"
+        elif legacy is False:
+            policy = "none"
+        else:
+            policy = "bottom"
+    policy = str(policy).lower()
+    if policy == "bottom":
+        return row == rows - 1
+    if policy == "all":
+        return True
+    if policy == "none":
+        return False
+    raise ValueError("x_axis.tick_label_policy must be one of: bottom, all, none.")
+
+
+def add_bottom_time_band(
+    fig: plt.Figure,
     axes: np.ndarray,
     layout: dict[str, Any],
-    timestamp_cfg: dict[str, Any] | None,
+    geometry: dict[str, Any] | None,
+    x_axis: dict[str, Any],
+    *,
+    axis_label_fontsize: float,
 ) -> None:
-    """Draw one compact origin timestamp below the bottom-left panel.
+    """Render the x-axis title and one origin timestamp on a shared fixed-height band.
 
-    The text is placed near the x=0 side and close to the x-axis label band.
-    It is intentionally rendered once per multi-panel figure.
+    The timestamp and x-axis title share the same vertical centerline. With the
+    timestamp font smaller than the axis-title font, the timestamp bbox stays within
+    the vertical band occupied by the x-axis title. In fixed-mm geometry the y/x
+    positions are absolute canvas millimetres, so different figures can align exactly.
     """
-    timestamp_cfg = timestamp_cfg or {}
-    if not timestamp_cfg.get("enabled", False):
+    label = str(x_axis.get("label", "")).strip()
+    timestamp_cfg = x_axis.get("origin_timestamp") or {}
+    timestamp_enabled = bool(timestamp_cfg.get("enabled", False))
+    timestamp_text = str(timestamp_cfg.get("text", "")).strip()
+    band_cfg = x_axis.get("bottom_band") or {}
+
+    if not label and not (timestamp_enabled and timestamp_text):
         return
 
-    text = str(timestamp_cfg.get("text", "")).strip()
-    if not text:
+    if geometry is not None:
+        panel_w, _ = geometry["panel_size_mm"]
+        gap_x, _ = geometry["gap_mm"]
+        margin = geometry["margin_mm"]
+        canvas_w, canvas_h = geometry["canvas_size_mm"]
+        cols = int(layout["cols"])
+        panel_block_w = cols * panel_w + (cols - 1) * gap_x
+
+        default_y_mm = min(8.5, margin["bottom"] * 0.55)
+        y_mm = float(band_cfg.get("y_mm", default_y_mm))
+        label_x_mm = float(band_cfg.get("label_x_mm", margin["left"] + panel_block_w / 2.0))
+        stamp_x_mm = float(band_cfg.get("timestamp_x_mm", margin["left"]))
+
+        if y_mm <= 0 or y_mm >= margin["bottom"]:
+            raise ValueError("x_axis.bottom_band.y_mm must lie inside the bottom margin.")
+
+        if label:
+            fig.text(
+                label_x_mm / canvas_w,
+                y_mm / canvas_h,
+                label,
+                ha="center",
+                va="center",
+                fontsize=axis_label_fontsize,
+            )
+        if timestamp_enabled and timestamp_text:
+            fig.text(
+                stamp_x_mm / canvas_w,
+                y_mm / canvas_h,
+                timestamp_text,
+                ha="left",
+                va="center",
+                fontsize=float(timestamp_cfg.get("fontsize", 9)),
+            )
         return
 
     rows = int(layout["rows"])
     ax = axes[rows - 1, 0]
-    ax.text(
-        float(timestamp_cfg.get("x", 0.0)),
-        float(timestamp_cfg.get("y", -0.16)),
-        text,
-        transform=ax.transAxes,
-        ha=timestamp_cfg.get("ha", "left"),
-        va=timestamp_cfg.get("va", "top"),
-        fontsize=float(timestamp_cfg.get("fontsize", 9)),
-        clip_on=False,
-    )
+    if label:
+        ax.set_xlabel(label, fontsize=axis_label_fontsize)
+    if timestamp_enabled and timestamp_text:
+        ax.text(
+            float(timestamp_cfg.get("x", 0.0)),
+            float(timestamp_cfg.get("y", -0.13)),
+            timestamp_text,
+            transform=ax.transAxes,
+            ha="left",
+            va="center",
+            fontsize=float(timestamp_cfg.get("fontsize", 9)),
+            clip_on=False,
+        )
 
 
-def audit_axis_range(
-    values: np.ndarray,
-    axis_range: list[float],
-    *,
-    name: str,
-    mode: str = "warn",
-) -> None:
+def finite_range(values: Iterable[float]) -> tuple[float, float] | None:
+    arr = np.asarray(list(values), dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return None
+    return float(arr.min()), float(arr.max())
+
+
+def resolve_x_window(
+    series_x: list[np.ndarray],
+    window_cfg: dict[str, Any] | None,
+) -> tuple[float, float, bool] | None:
+    """Resolve an optional plotting window without interpolation.
+
+    Modes:
+    - fixed: use explicit numeric start/end.
+    - common_valid: intersect the actual finite support of all supplied series.
+    """
+    if not window_cfg:
+        return None
+    mode = str(window_cfg.get("mode", "fixed")).lower()
+    rebase = bool(window_cfg.get("rebase_to_zero", False))
+
+    if mode == "fixed":
+        if "start" not in window_cfg or "end" not in window_cfg:
+            raise ValueError("x_window fixed mode requires start and end.")
+        start = float(window_cfg["start"])
+        end = float(window_cfg["end"])
+    elif mode == "common_valid":
+        ranges = []
+        for x in series_x:
+            arr = np.asarray(x, dtype=float)
+            arr = arr[np.isfinite(arr)]
+            if arr.size == 0:
+                raise ValueError("common_valid x window cannot be resolved from an empty series.")
+            ranges.append((float(arr.min()), float(arr.max())))
+        start = max(r[0] for r in ranges)
+        end = min(r[1] for r in ranges)
+    else:
+        raise ValueError("x_window.mode must be one of: fixed, common_valid.")
+
+    if not np.isfinite(start) or not np.isfinite(end) or end <= start:
+        raise ValueError(f"Invalid x window: start={start}, end={end}.")
+    return start, end, rebase
+
+
+def clip_and_rebase_xy(
+    frame: Any,
+    x_col: str,
+    start: float,
+    end: float,
+    rebase: bool,
+) -> Any:
+    output = frame.loc[(frame[x_col] >= start) & (frame[x_col] <= end)].copy()
+    if rebase:
+        output[x_col] = output[x_col] - start
+    return output
+
+
+def x_axis_for_window(
+    x_axis: dict[str, Any],
+    window: tuple[float, float, bool] | None,
+    window_cfg: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Return a copy of x_axis adjusted for an optional window/rebase operation."""
+    result = dict(x_axis)
+    if window is None:
+        return result
+    start, end, rebase = window
+    cfg = window_cfg or {}
+    axis_start = 0.0 if rebase else start
+    axis_end = end - start if rebase else end
+    result["range"] = [axis_start, axis_end]
+
+    tick_step = cfg.get("tick_step")
+    if tick_step is not None:
+        step = float(tick_step)
+        if step <= 0:
+            raise ValueError("x_window.tick_step must be positive.")
+        ticks = list(np.arange(axis_start, axis_end + step * 0.25, step, dtype=float))
+        ticks = [float(v) for v in ticks if v <= axis_end + 1e-9]
+        if cfg.get("include_endpoint", True) and (not ticks or abs(ticks[-1] - axis_end) > 1e-9):
+            ticks.append(float(axis_end))
+        result["ticks"] = ticks
+    else:
+        old_ticks = [float(v) for v in result.get("ticks", [])]
+        if rebase:
+            old_ticks = [v - start for v in old_ticks if start <= v <= end]
+        else:
+            old_ticks = [v for v in old_ticks if start <= v <= end]
+        result["ticks"] = old_ticks
+    return result
+
+
+def audit_axis_range(values: np.ndarray, axis_range: list[float], *, name: str, mode: str = "warn") -> None:
     finite = np.asarray(values, dtype=float)
     finite = finite[np.isfinite(finite)]
     if finite.size == 0:

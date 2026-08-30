@@ -1,94 +1,46 @@
 {
-  "stations": [
-    "A1",
-    "A2",
-    "A3",
-    "A4"
-  ],
+  "stations": ["A1", "A2", "A3", "A4"],
   "layout": {
     "rows": 4,
     "cols": 1,
     "geometry": {
       "profile": "academic_mm_v1",
-      "panel_size_mm": [
-        168,
-        50
-      ],
-      "gap_mm": [
-        0,
-        8
-      ],
-      "margin_mm": {
-        "left": 26,
-        "right": 8,
-        "bottom": 14,
-        "top": 12
-      }
+      "panel_size_mm": [168, 50],
+      "gap_mm": [0, 8],
+      "margin_mm": {"left": 26, "right": 8, "bottom": 16, "top": 12}
     },
-    "hide_y_label_nonfirst_col": true,
-    "hide_x_label_nonlast_row": true
+    "hide_y_label_nonfirst_col": true
   },
   "station_col": "station",
   "x_col": "time_h",
   "reference_col": "reference",
   "simulation_col": "simulation",
   "x_axis": {
-    "range": [
-      0,
-      96
-    ],
-    "ticks": [
-      0,
-      24,
-      48,
-      72,
-      96
-    ],
+    "range": [0, 96],
+    "ticks": [0, 24, 48, 72, 96],
     "label": "时间(h)",
-    "show_tick_labels": false,
+    "tick_label_policy": "bottom",
     "origin_timestamp": {
       "enabled": true,
       "text": "2014-09-15 00:00",
-      "fontsize": 9,
-      "x": 0.0,
-      "y": -0.16
-    }
+      "fontsize": 9
+    },
+    "bottom_band": {"y_mm": 8.5}
   },
   "y_axis": {
-    "range": [
-      0,
-      35
-    ],
-    "ticks": [
-      0,
-      5,
-      10,
-      15,
-      20,
-      25,
-      30,
-      35
-    ],
+    "range": [0, 35],
+    "ticks": [0, 5, 10, 15, 20, 25, 30, 35],
     "label": "风速（m/s）"
   },
   "legend": {
     "enabled": true,
-    "labels": [
-      "实测",
-      "模拟"
-    ],
+    "labels": ["实测", "模拟"],
     "fontsize": 14,
     "shift_x_mm": 0,
     "shift_y_mm": 0
   },
-  "station_label": {
-    "enabled": true,
-    "x": 0.02,
-    "y": 0.92
-  },
-  "range_guard": {
-    "mode": "error"
-  },
+  "station_label": {"enabled": true, "x": 0.02, "y": 0.92},
+  "range_guard": {"mode": "error"},
   "style": {
     "observed_linestyle": "--",
     "simulated_linestyle": "-",

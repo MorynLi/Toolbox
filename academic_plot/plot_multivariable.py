@@ -14,17 +14,21 @@ import numpy as np
 import pandas as pd
 
 from plot_common import (
+    add_bottom_time_band,
     add_embedded_legend,
-    add_origin_timestamp,
     audit_axis_range,
     break_circular,
+    clip_and_rebase_xy,
     configure_fonts,
     make_figure_axes,
     resolve_geometry,
+    resolve_x_window,
     save_main_figure,
+    x_axis_for_window,
+    x_tick_labels_visible,
 )
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 
 DEFAULT_STYLE: dict[str, Any] = {
     "reference_color": "#8B0000",
@@ -151,10 +155,31 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
     rows = int(layout["rows"])
     cols = int(layout["cols"])
 
+    prepared: list[tuple[pd.DataFrame, pd.DataFrame]] = []
+    series_x: list[np.ndarray] = []
+    for panel in panels:
+        reference = panel_series(data, panel, "reference_col", "reference_valid")
+        simulation = panel_series(data, panel, "simulation_col", "simulation_valid")
+        prepared.append((reference, simulation))
+        series_x.extend([reference[PLOT_X].to_numpy(), simulation[PLOT_X].to_numpy()])
+
+    window_cfg = config.get("x_window")
+    window = resolve_x_window(series_x, window_cfg)
+    if window is not None:
+        start, end, rebase = window
+        prepared = [
+            (
+                clip_and_rebase_xy(reference, PLOT_X, start, end, rebase),
+                clip_and_rebase_xy(simulation, PLOT_X, start, end, rebase),
+            )
+            for reference, simulation in prepared
+        ]
+
+    x_axis = x_axis_for_window(config["x_axis"], window, window_cfg)
+    range_mode = str(config.get("range_guard", {}).get("mode", "warn"))
+
     fig, axes, fixed_geometry, geometry = make_figure_axes(rows, cols, layout)
     axes_flat = axes.ravel()
-    x_axis = config["x_axis"]
-    range_mode = str(config.get("range_guard", {}).get("mode", "warn"))
 
     for index, panel in enumerate(panels):
         ax = axes_flat[index]
@@ -163,9 +188,7 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
         y_axis = panel["y_axis"]
         circular = bool(panel.get("circular", False))
         circular_jump = float(panel.get("circular_jump_deg", 180.0))
-
-        reference = panel_series(data, panel, "reference_col", "reference_valid")
-        simulation = panel_series(data, panel, "simulation_col", "simulation_valid")
+        reference, simulation = prepared[index]
 
         audit_axis_range(reference[reference_col].to_numpy(), y_axis["range"], name=f"panel {index+1} reference", mode=range_mode)
         audit_axis_range(simulation[simulation_col].to_numpy(), y_axis["range"], name=f"panel {index+1} simulation", mode=range_mode)
@@ -190,6 +213,7 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
         ax.set_ylim(*y_axis["range"])
         ax.set_yticks(y_axis["ticks"])
         ax.set_ylabel(y_axis["label"], fontsize=style["axis_label_fontsize"])
+        ax.set_xlabel("")
         ax.grid(False)
         ax.tick_params(
             direction="in", top=True, right=True,
@@ -201,10 +225,7 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
             spine.set_linewidth(style["spine_width"])
 
         row, _ = divmod(index, cols)
-        show_x_label = row == rows - 1 or not layout.get("hide_x_label_nonlast_row", True)
-        show_x_tick_labels = bool(x_axis.get("show_tick_labels", False))
-        ax.set_xlabel(x_axis["label"] if show_x_label else "", fontsize=style["axis_label_fontsize"])
-        ax.tick_params(labelbottom=show_x_tick_labels)
+        ax.tick_params(labelbottom=x_tick_labels_visible(row, rows, x_axis))
 
         panel_label = panel.get("panel_label")
         if panel_label:
@@ -218,7 +239,7 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
     for ax in axes_flat[len(panels):]:
         ax.set_visible(False)
 
-    add_origin_timestamp(axes, layout, x_axis.get("origin_timestamp"))
+    add_bottom_time_band(fig, axes, layout, geometry, x_axis, axis_label_fontsize=style["axis_label_fontsize"])
 
     legend_cfg = config.get("legend", {})
     add_embedded_legend(
