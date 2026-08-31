@@ -1,5 +1,5 @@
 import os
-from typing import Any
+from typing import Any, Optional
 
 import requests
 from dotenv import load_dotenv
@@ -41,7 +41,9 @@ class SteamClient:
         )
         return data.get("response", {}).get("games", [])
 
-    def get_achievements(self, appid: int, language: str = "schinese") -> list[dict[str, Any]] | None:
+    def get_achievements(
+        self, appid: int, language: str = "schinese"
+    ) -> Optional[list[dict[str, Any]]]:
         data = self._get(
             "/ISteamUserStats/GetPlayerAchievements/v1/",
             {"appid": appid, "l": language},
