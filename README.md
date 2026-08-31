@@ -31,6 +31,12 @@ Toolbox/
 ├── file_scan/
 │   ├── README.md
 │   └── scan_directory.py
+├── Gamedata/
+│   ├── README.md
+│   ├── requirements.txt
+│   ├── .env.example
+│   ├── steam_client.py
+│   └── collect.py
 └── plot_digitizer_launcher/
     ├── README.md
     ├── PlotDigitizer.bat
@@ -44,6 +50,7 @@ Toolbox/
 | `academic_plot/` | 学术验证时序图；支持“多站点 × 单变量”和“单事件 × 多变量”，正式输出 SVG | Python 3.9+；NumPy、Pandas、Matplotlib |
 | `conversation_pack/` | 长 AI 对话迁移：GPT 盘点当前文件/产物和关键信息，用户筛选，脚本校验并打包为 HANDOFF + 附件 | Python 3.9+ 标准库 |
 | `file_scan/` | 为 AI/LLM 生成低上下文成本的目录索引：摘要、紧凑目录树、完整文件清单与机器可读 manifest | Python 3.9+ 标准库 |
+| `Gamedata/` | 通过 Steam Web API 采集个人游戏库、游玩时长、最近游玩和指定游戏成就，为后续游戏筛选与推荐提供结构化数据源 | Python 3.9+；Requests、python-dotenv |
 | `plot_digitizer_launcher/` | 为已安装的 PlotDigitizer 提供 Windows 一键启动、浏览器打开和安全停止封装 | Windows 10/11、PowerShell；PlotDigitizer 的 Python/Node 环境已完成配置 |
 
 ## 设计原则
