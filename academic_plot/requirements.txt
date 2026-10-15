@@ -1,3 +1,7 @@
 numpy>=1.23
 pandas>=1.5
 matplotlib>=3.6
+# plot_map.py
+scipy>=1.9          # only for display_smoothing
+xarray>=2023.1      # only for NetCDF input
+# cartopy>=0.22     # only for land.source=natural_earth

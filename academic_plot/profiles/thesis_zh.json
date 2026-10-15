@@ -1,0 +1,58 @@
+{
+  "name": "thesis_zh",
+  "description": "大连理工大学硕士学位论文（2026-04 模板）。版心 Word 160 mm / LaTeX 156 mm，取 150 mm 通栏。图题由文档题注生成（中英双语，宋体/Times New Roman 五号），不画入图内。规范未规定图内字号，取小五 9 pt，注记六号 7.5 pt。",
+  "lang": "zh",
+  "widths_mm": {
+    "full": 150,
+    "half": 74
+  },
+  "fonts": {
+    "latin": "Times New Roman",
+    "cjk": "SimSun",
+    "draft_latin": "Liberation Serif",
+    "draft_cjk": "Noto Serif CJK SC"
+  },
+  "font_size_pt": {
+    "tick": 9,
+    "label": 9,
+    "legend": 9,
+    "panel_label": 9,
+    "annotation": 7.5
+  },
+  "line_width_pt": {
+    "spine": 0.6,
+    "tick": 0.6,
+    "reference": 1.0,
+    "simulation": 1.1,
+    "contour": 0.35,
+    "coast": 0.4
+  },
+  "tick_length_pt": 3,
+  "geometry_mm": {
+    "gap": [
+      6,
+      6
+    ],
+    "margin": {
+      "left": 15,
+      "right": 3,
+      "bottom": 11,
+      "top": 8
+    },
+    "bottom_band_y": 3.5,
+    "ylabel_offset": 9.5
+  },
+  "panel_label": {
+    "format": "({letter})",
+    "position": "top_left"
+  },
+  "export": {
+    "formats": [
+      "pdf",
+      "svg",
+      "png"
+    ],
+    "png_dpi": 600
+  },
+  "caption": "bicaption"
+}

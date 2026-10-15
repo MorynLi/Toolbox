@@ -1,0 +1,73 @@
+{
+  "profile": "thesis_zh",
+  "layout": {
+    "rows": 1,
+    "cols": 1,
+    "geometry": {
+      "profile": "academic_mm_v1",
+      "width": "half"
+    }
+  },
+  "map": {
+    "extent": [
+      105,
+      121,
+      8,
+      25
+    ],
+    "xticks": [
+      106,
+      110,
+      114,
+      118
+    ],
+    "yticks": [
+      10,
+      15,
+      20,
+      25
+    ],
+    "land": {
+      "source": "map_land_demo.geojson"
+    }
+  },
+  "panels": [
+    {
+      "input": "map_input.csv"
+    }
+  ],
+  "field": {
+    "levels": {
+      "start": 0,
+      "stop": 3.0,
+      "step": 0.1
+    },
+    "ticks": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "cmap": "YlGnBu",
+    "contours": [
+      0.5,
+      1,
+      1.5,
+      2,
+      2.5
+    ],
+    "label": {
+      "quantity": "有效波高",
+      "symbol": "H_s",
+      "unit": "m"
+    }
+  },
+  "colorbar": {
+    "position": "right"
+  },
+  "caption": {
+    "zh": "示例：年均有效波高",
+    "en": "Example: annual mean significant wave height",
+    "label": "fig:map_demo"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "profile": "thesis_zh",
+  "stations": ["A1", "A2", "A3", "A4"],
+  "layout": {
+    "rows": 2,
+    "cols": 2,
+    "geometry": {"profile": "academic_mm_v1", "width": "full", "panel_aspect": 0.55}
+  },
+  "station_col": "station",
+  "x_col": "time_h",
+  "reference_col": "observed",
+  "simulation_col": "simulated",
+  "x_axis": {
+    "range": [0, 72],
+    "ticks": [0, 24, 48, 72],
+    "label": {"quantity": {"zh": "时间", "en": "Time"}, "unit": "h"},
+    "tick_label_policy": "bottom"
+  },
+  "y_axis": {
+    "range": [990, 1015],
+    "ticks": [990, 995, 1000, 1005, 1010, 1015],
+    "label": {"quantity": {"zh": "气压", "en": "Pressure"}, "symbol": "P", "unit": "hPa"}
+  },
+  "legend": {"labels": ["实测", "模拟"]},
+  "range_guard": {"mode": "error"},
+  "caption": {
+    "zh": "示例：各站气压验证",
+    "en": "Example: pressure validation at stations",
+    "label": "fig:pressure_demo"
+  }
+}

@@ -23,12 +23,22 @@ from plot_common import (
     make_figure_axes,
     resolve_geometry,
     resolve_x_window,
-    save_main_figure,
     x_axis_for_window,
     x_tick_labels_visible,
 )
+from style import (
+    axes_box_mm,
+    draw_label,
+    export_figure,
+    label_text,
+    load_profile,
+    panel_letter,
+    setup_fonts,
+    style_defaults,
+    write_caption_snippet,
+)
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 DEFAULT_STYLE: dict[str, Any] = {
     "observed_color": "#8B0000",
@@ -56,7 +66,11 @@ def load_config(path: Path) -> dict[str, Any]:
     if missing:
         raise ValueError(f"Config missing required keys: {', '.join(sorted(missing))}")
 
+    profile = load_profile(config["profile"]) if config.get("profile") else None
+    config["_profile"] = profile
     style = DEFAULT_STYLE.copy()
+    if profile is not None:
+        style.update(style_defaults(profile))
     style.update(config.get("style", {}))
     if "line_width" in config.get("style", {}):
         legacy_width = float(config["style"]["line_width"])
@@ -110,7 +124,7 @@ def validate_inputs(data: pd.DataFrame, config: dict[str, Any]) -> None:
         raise ValueError("layout.rows and layout.cols must be positive integers.")
     if len(config["stations"]) > rows * cols:
         raise ValueError("Station count exceeds available subplot slots (rows × cols).")
-    resolve_geometry(config["layout"])
+    resolve_geometry(config["layout"], config.get("_profile"))
 
 
 def apply_validity(frame: pd.DataFrame, rule: dict[str, Any] | None) -> pd.DataFrame:
@@ -146,8 +160,27 @@ def prepare_station_series(data: pd.DataFrame, config: dict[str, Any]) -> dict[s
     return prepared
 
 
-def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
-    configure_fonts()
+def apply_profile_axis_defaults(x_axis: dict[str, Any], profile: dict[str, Any], style: dict[str, Any]) -> dict[str, Any]:
+    x_axis = dict(x_axis)
+    x_axis["bottom_band"] = {"y_mm": profile["geometry_mm"]["bottom_band_y"], **(x_axis.get("bottom_band") or {})}
+    if x_axis.get("origin_timestamp"):
+        x_axis["origin_timestamp"] = {"fontsize": style["annotation_fontsize"], **x_axis["origin_timestamp"]}
+    return x_axis
+
+
+def draw_main(
+    data: pd.DataFrame,
+    config: dict[str, Any],
+    output: Path,
+    *,
+    draft: bool = False,
+    font_dir: Path | None = None,
+) -> list[Path]:
+    profile = config.get("_profile")
+    if profile is None:
+        configure_fonts()
+    else:
+        setup_fonts(profile, draft=draft, font_dir=font_dir)
     validate_inputs(data, config)
 
     style = config["style"]
@@ -176,12 +209,17 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
             )
 
     x_axis = x_axis_for_window(config["x_axis"], window, window_cfg)
+    if profile is not None:
+        x_axis = apply_profile_axis_defaults(x_axis, profile, style)
+    x_axis["label"] = label_text(x_axis.get("label", ""), profile)
     y_axis = config["y_axis"]
+    y_label = label_text(y_axis.get("label", ""), profile)
     circular = bool(config.get("circular", False))
     circular_jump = float(config.get("circular_jump_deg", 180.0))
     range_mode = str(config.get("range_guard", {}).get("mode", "warn"))
 
-    fig, axes, fixed_geometry, geometry = make_figure_axes(rows, cols, layout)
+    fig, axes, fixed_geometry, geometry = make_figure_axes(rows, cols, layout, profile)
+    hide_y_ticks = layout.get("hide_y_ticklabels_nonfirst_col", profile is not None)
     axes_flat = axes.ravel()
 
     for index, station in enumerate(stations):
@@ -231,16 +269,28 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
 
         row, col = divmod(index, cols)
         show_y = col == 0 or not layout.get("hide_y_label_nonfirst_col", True)
-        ax.set_ylabel(y_axis["label"] if show_y else "", fontsize=style["axis_label_fontsize"])
+        if profile is not None and fixed_geometry:
+            ax.set_ylabel("")
+            if show_y:
+                left, bottom, _, height = axes_box_mm(fig, ax)
+                offset = profile["geometry_mm"]["ylabel_offset"]
+                draw_label(fig, y_label, left - offset, bottom + height / 2, fontsize=style["axis_label_fontsize"], rotation=90)
+        else:
+            ax.set_ylabel(y_label if show_y else "", fontsize=style["axis_label_fontsize"])
         ax.set_xlabel("")
         ax.tick_params(labelbottom=x_tick_labels_visible(row, rows, x_axis))
+        if col > 0 and hide_y_ticks:
+            ax.tick_params(labelleft=False)
 
         label_cfg = config.get("station_label", {})
         if label_cfg.get("enabled", True):
+            text = station
+            if label_cfg.get("letters", profile is not None):
+                text = f"{panel_letter(index, profile)} {station}"
             ax.text(
                 label_cfg.get("x", 0.03),
                 label_cfg.get("y", 0.97),
-                station,
+                text,
                 transform=ax.transAxes,
                 ha="left",
                 va="top",
@@ -252,7 +302,10 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
 
     add_bottom_time_band(fig, axes, layout, geometry, x_axis, axis_label_fontsize=style["axis_label_fontsize"])
 
-    legend_cfg = config.get("legend", {})
+    legend_cfg = dict(config.get("legend", {}))
+    if profile is not None:
+        legend_cfg.setdefault("fontsize", style["legend_fontsize"])
+        legend_cfg.setdefault("handlelength", 2.6)
     add_embedded_legend(
         fig,
         layout,
@@ -264,7 +317,10 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
         legend_cfg=legend_cfg,
     )
 
-    save_main_figure(fig, output, fixed_geometry)
+    width_mm = fig.get_figwidth() * 25.4
+    written = export_figure(fig, output, profile=profile, fixed_geometry=fixed_geometry, draft=draft, qc=config.get("qc"))
+    snippet = write_caption_snippet(output, config.get("caption"), width_mm=width_mm, profile=profile)
+    return written + ([snippet] if snippet else [])
 
 
 def draw_legacy_legend(config: dict[str, Any], output: Path) -> None:
@@ -289,7 +345,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True, help="Prepared CSV with reference/simulation columns.")
     parser.add_argument("--config", type=Path, required=True, help="JSON plot configuration.")
-    parser.add_argument("--output", type=Path, required=True, help="Main SVG output path.")
+    parser.add_argument("--output", type=Path, required=True, help="Main output path; with a profile, every profile format is written next to it.")
+    parser.add_argument("--draft", action="store_true", help="Use metric-compatible substitute fonts and stamp DRAFT.")
+    parser.add_argument("--font-dir", type=Path, default=None, help="Folder with the profile font files (or set ACADEMIC_PLOT_FONT_DIR).")
     parser.add_argument(
         "--legend-output",
         type=Path,
@@ -304,7 +362,8 @@ def main() -> None:
     args = parse_args()
     data = pd.read_csv(args.input)
     config = load_config(args.config)
-    draw_main(data, config, args.output)
+    for path in draw_main(data, config, args.output, draft=args.draft, font_dir=args.font_dir):
+        print(path)
     if args.legend_output is not None:
         draw_legacy_legend(config, args.legend_output)
 

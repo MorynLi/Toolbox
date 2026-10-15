@@ -13,3 +13,12 @@ Thumbs.db
 文件清单.csv
 扫描摘要.txt
 Gamedata/data/
+
+# Commercial fonts (Times New Roman, SimSun, ...) must never be committed
+*.ttf
+*.ttc
+*.otf
+
+# academic_plot generated outputs
+academic_plot/**/*.pdf
+academic_plot/**/*.tex

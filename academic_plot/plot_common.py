@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import font_manager, rcParams
 
+from style import _runs, draw_label, width_geometry
+
 MM_PER_INCH = 25.4
 STANDARD_GEOMETRY_PROFILE = "academic_mm_v1"
 STANDARD_GEOMETRY_MM: dict[str, Any] = {
@@ -72,12 +74,13 @@ def break_circular(x: np.ndarray, y: np.ndarray, jump: float = 180.0) -> tuple[n
     return np.asarray(xo), np.asarray(yo)
 
 
-def resolve_geometry(layout: dict[str, Any]) -> dict[str, Any] | None:
+def resolve_geometry(layout: dict[str, Any], profile: dict[str, Any] | None = None) -> dict[str, Any] | None:
     geometry = layout.get("geometry")
     if geometry is None:
         return None
     if not isinstance(geometry, dict):
         raise ValueError("layout.geometry must be an object.")
+    geometry = width_geometry(geometry, int(layout["rows"]), int(layout["cols"]), profile)
 
     profile = str(geometry.get("profile", STANDARD_GEOMETRY_PROFILE))
     if profile != STANDARD_GEOMETRY_PROFILE:
@@ -115,8 +118,10 @@ def resolve_geometry(layout: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def make_figure_axes(rows: int, cols: int, layout: dict[str, Any]) -> tuple[plt.Figure, np.ndarray, bool, dict[str, Any] | None]:
-    geometry = resolve_geometry(layout)
+def make_figure_axes(
+    rows: int, cols: int, layout: dict[str, Any], profile: dict[str, Any] | None = None
+) -> tuple[plt.Figure, np.ndarray, bool, dict[str, Any] | None]:
+    geometry = resolve_geometry(layout, profile)
     if geometry is None:
         figsize = layout.get("figsize_in", [10.6, 7.55])
         fig, axes = plt.subplots(rows, cols, figsize=figsize, squeeze=False)
@@ -282,7 +287,9 @@ def add_bottom_time_band(
         if y_mm <= 0 or y_mm >= margin["bottom"]:
             raise ValueError("x_axis.bottom_band.y_mm must lie inside the bottom margin.")
 
-        if label:
+        if label and len(_runs(label)) > 1:
+            draw_label(fig, label, label_x_mm, y_mm, fontsize=axis_label_fontsize)
+        elif label:
             fig.text(
                 label_x_mm / canvas_w,
                 y_mm / canvas_h,

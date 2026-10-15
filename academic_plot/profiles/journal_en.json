@@ -1,0 +1,59 @@
+{
+  "name": "journal_en",
+  "description": "Elsevier artwork baseline (Coastal Engineering, Ocean Engineering, etc.): widths 90/140/190 mm; text about 7 pt at final size, sub/superscripts no smaller than 6 pt; Times New Roman; line art 1000 dpi. Figure titles go in the manuscript caption, not in the artwork.",
+  "lang": "en",
+  "widths_mm": {
+    "single": 90,
+    "onehalf": 140,
+    "full": 190
+  },
+  "fonts": {
+    "latin": "Times New Roman",
+    "cjk": null,
+    "draft_latin": "Liberation Serif",
+    "draft_cjk": null
+  },
+  "font_size_pt": {
+    "tick": 7,
+    "label": 8,
+    "legend": 7,
+    "panel_label": 8,
+    "annotation": 7
+  },
+  "line_width_pt": {
+    "spine": 0.5,
+    "tick": 0.5,
+    "reference": 0.9,
+    "simulation": 1.0,
+    "contour": 0.3,
+    "coast": 0.35
+  },
+  "tick_length_pt": 2.5,
+  "geometry_mm": {
+    "gap": [
+      5,
+      5
+    ],
+    "margin": {
+      "left": 12,
+      "right": 3,
+      "bottom": 9,
+      "top": 7
+    },
+    "bottom_band_y": 3.0,
+    "ylabel_offset": 7.5
+  },
+  "panel_label": {
+    "format": "({letter})",
+    "position": "top_left"
+  },
+  "export": {
+    "formats": [
+      "pdf",
+      "svg",
+      "png"
+    ],
+    "png_dpi": 1000
+  },
+  "caption": "caption"
+}

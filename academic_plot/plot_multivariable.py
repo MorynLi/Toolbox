@@ -23,12 +23,23 @@ from plot_common import (
     make_figure_axes,
     resolve_geometry,
     resolve_x_window,
-    save_main_figure,
     x_axis_for_window,
     x_tick_labels_visible,
 )
+from plot_validation import apply_profile_axis_defaults
+from style import (
+    axes_box_mm,
+    draw_label,
+    export_figure,
+    label_text,
+    load_profile,
+    panel_letter,
+    setup_fonts,
+    style_defaults,
+    write_caption_snippet,
+)
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 DEFAULT_STYLE: dict[str, Any] = {
     "reference_color": "#8B0000",
@@ -57,7 +68,11 @@ def load_config(path: Path) -> dict[str, Any]:
     if missing:
         raise ValueError(f"Config missing required keys: {', '.join(sorted(missing))}")
 
+    profile = load_profile(config["profile"]) if config.get("profile") else None
+    config["_profile"] = profile
     style = DEFAULT_STYLE.copy()
+    if profile is not None:
+        style.update(style_defaults(profile))
     style.update(config.get("style", {}))
     if "line_width" in config.get("style", {}):
         legacy_width = float(config["style"]["line_width"])
@@ -101,7 +116,7 @@ def validate_inputs(data: pd.DataFrame, config: dict[str, Any]) -> None:
         raise ValueError("panels must be a non-empty list.")
     if len(panels) > rows * cols:
         raise ValueError("Panel count exceeds available subplot slots (rows × cols).")
-    resolve_geometry(config["layout"])
+    resolve_geometry(config["layout"], config.get("_profile"))
 
     required: set[str] = set()
     for panel in panels:
@@ -144,8 +159,19 @@ def plot_series(ax: plt.Axes, frame: pd.DataFrame, value_col: str, *, circular: 
     ax.plot(x, y, **kwargs)
 
 
-def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
-    configure_fonts()
+def draw_main(
+    data: pd.DataFrame,
+    config: dict[str, Any],
+    output: Path,
+    *,
+    draft: bool = False,
+    font_dir: Path | None = None,
+) -> list[Path]:
+    profile = config.get("_profile")
+    if profile is None:
+        configure_fonts()
+    else:
+        setup_fonts(profile, draft=draft, font_dir=font_dir)
     data = prepare_x(data, config)
     validate_inputs(data, config)
 
@@ -176,9 +202,12 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
         ]
 
     x_axis = x_axis_for_window(config["x_axis"], window, window_cfg)
+    if profile is not None:
+        x_axis = apply_profile_axis_defaults(x_axis, profile, style)
+    x_axis["label"] = label_text(x_axis.get("label", ""), profile)
     range_mode = str(config.get("range_guard", {}).get("mode", "warn"))
 
-    fig, axes, fixed_geometry, geometry = make_figure_axes(rows, cols, layout)
+    fig, axes, fixed_geometry, geometry = make_figure_axes(rows, cols, layout, profile)
     axes_flat = axes.ravel()
 
     for index, panel in enumerate(panels):
@@ -212,7 +241,14 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
         ax.set_xticks(x_axis["ticks"])
         ax.set_ylim(*y_axis["range"])
         ax.set_yticks(y_axis["ticks"])
-        ax.set_ylabel(y_axis["label"], fontsize=style["axis_label_fontsize"])
+        y_label = label_text(y_axis.get("label", ""), profile)
+        if profile is not None and fixed_geometry:
+            ax.set_ylabel("")
+            left, bottom, _, height = axes_box_mm(fig, ax)
+            offset = profile["geometry_mm"]["ylabel_offset"]
+            draw_label(fig, y_label, left - offset, bottom + height / 2, fontsize=style["axis_label_fontsize"], rotation=90)
+        else:
+            ax.set_ylabel(y_label, fontsize=style["axis_label_fontsize"])
         ax.set_xlabel("")
         ax.grid(False)
         ax.tick_params(
@@ -228,6 +264,8 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
         ax.tick_params(labelbottom=x_tick_labels_visible(row, rows, x_axis))
 
         panel_label = panel.get("panel_label")
+        if profile is not None and config.get("panel_letters", True):
+            panel_label = f"{panel_letter(index, profile)} {panel_label or ''}".strip()
         if panel_label:
             label_cfg = panel.get("panel_label_position", {})
             ax.text(
@@ -241,7 +279,10 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
 
     add_bottom_time_band(fig, axes, layout, geometry, x_axis, axis_label_fontsize=style["axis_label_fontsize"])
 
-    legend_cfg = config.get("legend", {})
+    legend_cfg = dict(config.get("legend", {}))
+    if profile is not None:
+        legend_cfg.setdefault("fontsize", style["legend_fontsize"])
+        legend_cfg.setdefault("handlelength", 2.6)
     add_embedded_legend(
         fig,
         layout,
@@ -253,7 +294,10 @@ def draw_main(data: pd.DataFrame, config: dict[str, Any], output: Path) -> None:
         legend_cfg=legend_cfg,
     )
 
-    save_main_figure(fig, output, fixed_geometry)
+    width_mm = fig.get_figwidth() * 25.4
+    written = export_figure(fig, output, profile=profile, fixed_geometry=fixed_geometry, draft=draft, qc=config.get("qc"))
+    snippet = write_caption_snippet(output, config.get("caption"), width_mm=width_mm, profile=profile)
+    return written + ([snippet] if snippet else [])
 
 
 def parse_args() -> argparse.Namespace:
@@ -261,6 +305,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--draft", action="store_true", help="Use metric-compatible substitute fonts and stamp DRAFT.")
+    parser.add_argument("--font-dir", type=Path, default=None, help="Folder with the profile font files.")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser.parse_args()
 
@@ -269,7 +315,8 @@ def main() -> None:
     args = parse_args()
     data = pd.read_csv(args.input)
     config = load_config(args.config)
-    draw_main(data, config, args.output)
+    for path in draw_main(data, config, args.output, draft=args.draft, font_dir=args.font_dir):
+        print(path)
 
 
 if __name__ == "__main__":
