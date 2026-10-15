@@ -167,6 +167,40 @@ def map_smoke(tmp: Path) -> None:
                           "--output", str(tmp / "range.svg"), "--draft"], cwd=ROOT, capture_output=True, text=True)
     assert bad.returncode != 0 and "exceeds levels" in bad.stderr, bad.stderr[-500:]
 
+    # A CSV cell that exists without a value stays blank over its whole footprint with blank_missing;
+    # absent cells (land) are not "missing". Without the flag only its centre drops below min_support.
+    from plot_map import display_smoothing, load_field
+    frame = pd.DataFrame({"lon": xx.ravel(), "lat": yy.ravel(), "value": value.ravel()})
+    frame.loc[(frame.lon == 112) & (frame.lat == 16), "value"] = np.nan
+    frame = frame[~((frame.lon == 105) & (frame.lat == 25))]
+    frame.to_csv(tmp / "gap.csv", index=False)
+    glon, glat, gz, missing = load_field({"input": "gap.csv"}, tmp)
+    assert missing.sum() == 1 and missing[list(glat).index(16), list(glon).index(112)]
+    cfg_s = {"target_res_deg": 0.05, "sigma": 2}
+    x, y, kept = display_smoothing(glon, glat, gz, {**cfg_s, "blank_missing": True}, missing)
+    _, _, filled = display_smoothing(glon, glat, gz, cfg_s, missing)
+    assert np.isnan(kept).sum() > np.isnan(filled).sum() and np.isnan(kept[np.isnan(filled)]).all()
+    assert x[-1] == glon[-1] and y[-1] == glat[-1]          # display grid never overshoots the source
+
+    # Spec export override + no colorbar label: only PNG/SVG, plus the caption text files.
+    cfg = {
+        "profile": "thesis_zh",
+        "layout": {"rows": 1, "cols": 1, "geometry": {"profile": "academic_mm_v1", "width": "half"}},
+        "map": {"extent": [105, 121, 8, 25], "xticks": [107, 111, 115, 119], "yticks": [10, 15, 20],
+                "land": {"source": "land.geojson"}, "tick_direction": "out"},
+        "panels": [{"input": "gap.csv"}],
+        "field": {"levels": {"start": 0.0, "stop": 2.0, "step": 0.2}, "ticks": [0, 1, 2], "contours": [1.0, 1.5],
+                  "contour_color": "0.4", "label": ""},
+        "display_smoothing": {"enabled": True, "blank_missing": True},
+        "colorbar": {"position": "right", "tick_direction": "out"},
+        "export": {"formats": ["png", "svg"], "png_dpi": 150},
+        "caption": {"zh": "测试图题", "en": "Test caption"},
+    }
+    (tmp / "locked.json").write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+    run(["python", str(ROOT / "plot_map.py"), "--config", str(tmp / "locked.json"), "--output", str(tmp / "locked.png"), "--draft"])
+    assert (tmp / "locked.png").exists() and (tmp / "locked.svg").exists() and not (tmp / "locked.pdf").exists()
+    assert "测试图题" in (tmp / "locked.caption.txt").read_text(encoding="utf-8")
+
 
 def main() -> None:
     unit_rules()

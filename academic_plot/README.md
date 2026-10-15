@@ -48,6 +48,11 @@ python plot_map.py --config example/map_config.json --output out/map.svg --font-
 - 填色层在 PDF/SVG 中栅格化（分辨率 = 样式档 dpi），文字与线条保持矢量。
 - `display_smoothing` 默认关闭；开启（重采样 + 归一化高斯平滑）仅用于显示，必须在图题中说明。
 - 经度刻度不要贴在 extent 边缘（相邻 panel 的刻度会相撞，QC 会拒绝）。
+- `display_smoothing.blank_missing: true`：CSV 中“有行但无值”的格点（如样本不足、未拟合的海上格点）在平滑后整格留白，不被邻格填补；CSV 中没有的格点（陆地）不受影响。
+- `field.contour_color`（默认 `"0.2"`）；等值线线宽和数值字号用 `style.contour_line_width`、`style.annotation_fontsize` 覆盖。
+- `field.label` 为空字符串时色标不加文字标注；`colorbar.tick_direction`（默认 `in`）；`map.tick_direction: "out"` 时刻度朝外，且只在左侧和下方。
+- `export: {"formats": [...], "png_dpi": N}` 覆盖样式档的导出格式；有 `caption` 时另写 `<stem>.caption.txt`（Word 题注文字）。每个文件的元数据记录引擎版本和样式档。
+- 项目侧锁定样式的用法：把完整 spec（除 panels/caption/色阶外）存为项目内模板，项目脚本只填数据和图题，参见 south-china-sea 项目 `绘图/scs_map.py`。
 
 ## 稳定规则
 

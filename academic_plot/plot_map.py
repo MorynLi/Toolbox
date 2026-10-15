@@ -30,7 +30,7 @@ from style import (
     write_caption_snippet,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 MM = 1 / 25.4
 
 # Extra space reserved outside the panel block for the colorbar (mm), per position.
@@ -40,8 +40,12 @@ PT = 25.4 / 72.0
 
 # ---------------------------------------------------------------- data
 
-def load_field(spec: dict[str, Any], base: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return (lon, lat, values[lat, lon]) on the source grid, latitude ascending."""
+def load_field(spec: dict[str, Any], base: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]:
+    """Return (lon, lat, values[lat, lon], missing) on the source grid, latitude ascending.
+
+    missing marks CSV rows that exist but carry no value (e.g. an ocean cell with too few samples);
+    cells absent from the CSV (land) are not missing. NetCDF cannot make the distinction: None.
+    """
     path = (base / spec["input"]).resolve()
     if path.suffix.lower() == ".nc":
         import xarray as xr
@@ -53,26 +57,30 @@ def load_field(spec: dict[str, Any], base: Path) -> tuple[np.ndarray, np.ndarray
         array = array.rename(rename).sortby("latitude").sortby("longitude")
         if array.dims != ("latitude", "longitude"):
             array = array.transpose("latitude", "longitude")
-        return array.longitude.values, array.latitude.values, array.values.astype(float)
+        return array.longitude.values, array.latitude.values, array.values.astype(float), None
 
     cols = spec.get("columns", {"lon": "lon", "lat": "lat", "value": "value"})
     frame = pd.read_csv(path)
     grid = frame.pivot(index=cols["lat"], columns=cols["lon"], values=cols["value"]).sort_index().sort_index(axis=1)
-    return grid.columns.to_numpy(float), grid.index.to_numpy(float), grid.to_numpy(float)
+    present = frame.assign(_row=1).pivot(index=cols["lat"], columns=cols["lon"], values="_row").reindex_like(grid)
+    missing = present.notna().to_numpy() & grid.isna().to_numpy()
+    return grid.columns.to_numpy(float), grid.index.to_numpy(float), grid.to_numpy(float), missing
 
 
-def display_smoothing(lon: np.ndarray, lat: np.ndarray, z: np.ndarray, cfg: dict[str, Any]):
+def display_smoothing(lon: np.ndarray, lat: np.ndarray, z: np.ndarray, cfg: dict[str, Any], missing: np.ndarray | None = None):
     """Display-only resampling + normalized Gaussian smoothing (never treats NaN as zero).
 
-    Off by default. When used, state it in the figure caption.
+    Off by default. When used, state it in the figure caption. With `blank_missing`, display
+    cells nearest to a missing source cell stay blank instead of being filled by neighbours.
     """
     from scipy.interpolate import RegularGridInterpolator
     from scipy.ndimage import gaussian_filter
 
     res = float(cfg.get("target_res_deg", 0.05))
     sigma = float(cfg.get("sigma", 2))
-    x = np.arange(lon.min(), lon.max() + res / 2, res)
-    y = np.arange(lat.min(), lat.max() + res / 2, res)
+    # linspace keeps the last display point exactly on the source edge (arange can overshoot it).
+    x = np.linspace(lon.min(), lon.max(), int(round((lon.max() - lon.min()) / res)) + 1)
+    y = np.linspace(lat.min(), lat.max(), int(round((lat.max() - lat.min()) / res)) + 1)
     xx, yy = np.meshgrid(x, y)
     points = np.column_stack([yy.ravel(), xx.ravel()])
     valid = np.isfinite(z)
@@ -82,6 +90,9 @@ def display_smoothing(lon: np.ndarray, lat: np.ndarray, z: np.ndarray, cfg: dict
     cov = gaussian_filter(support, sigma=sigma, mode="nearest")
     out = np.divide(num, cov, out=np.full_like(num, np.nan), where=cov > 1e-12)
     out[cov < float(cfg.get("min_support", 0.5))] = np.nan
+    if cfg.get("blank_missing", False) and missing is not None and missing.any():
+        near = RegularGridInterpolator((lat, lon), missing.astype(float), method="nearest")(points).reshape(xx.shape)
+        out[near > 0.5] = np.nan
     return x, y, out
 
 
@@ -219,10 +230,10 @@ def draw_main(config: dict[str, Any], output: Path, base: Path, *, draft: bool =
     for index, panel in enumerate(panels):
         ax = axes.ravel()[index]
         row, col = divmod(index, cols)
-        lon, lat, z = load_field(panel, base)
+        lon, lat, z, missing = load_field(panel, base)
         audit_field(z, levels, extend, panel["input"], range_mode)
         if smoothing.get("enabled", False):
-            lon, lat, z = display_smoothing(lon, lat, z, smoothing)
+            lon, lat, z = display_smoothing(lon, lat, z, smoothing, missing)
             warnings.warn(f"{panel['input']}: display smoothing applied; state it in the caption.", UserWarning, stacklevel=2)
 
         if mode == "pcolormesh":
@@ -233,7 +244,8 @@ def draw_main(config: dict[str, Any], output: Path, base: Path, *, draft: bool =
 
         contours = field_cfg.get("contours")
         if contours:
-            cs = ax.contour(lon, lat, np.ma.masked_invalid(z), levels=contours, colors="0.2", linewidths=style["contour_line_width"])
+            cs = ax.contour(lon, lat, np.ma.masked_invalid(z), levels=contours, colors=field_cfg.get("contour_color", "0.2"),
+                            linewidths=style["contour_line_width"])
             if field_cfg.get("contour_labels", True):
                 fmt = field_cfg.get("contour_label_format", "%g")
                 ax.clabel(cs, fmt=fmt, fontsize=style["annotation_fontsize"], inline=True, inline_spacing=2)
@@ -259,6 +271,8 @@ def draw_main(config: dict[str, Any], output: Path, base: Path, *, draft: bool =
             labelsize=style["tick_fontsize"], width=style["tick_width"], length=style["tick_length"], pad=2,
             labelleft=col == 0, labelbottom=row == rows - 1 or config.get("x_ticklabels_all_rows", False),
         )
+        if map_cfg.get("tick_direction") == "out":   # outward ticks on the labelled sides only
+            ax.tick_params(direction="out", top=False, right=False)
         for spine in ax.spines.values():
             spine.set_linewidth(style["spine_width"])
             spine.set_zorder(5)
@@ -281,8 +295,8 @@ def draw_main(config: dict[str, Any], output: Path, base: Path, *, draft: bool =
     add_colorbar(fig, axes, geometry, mappable, levels, config, profile, style)
 
     width_mm = fig.get_figwidth() * 25.4
-    written = export_figure(fig, output, profile=profile, fixed_geometry=True, draft=draft, qc=config.get("qc"))
-    snippet = write_caption_snippet(output, config.get("caption"), width_mm=width_mm, profile=profile)
+    written = export_figure(fig, output, profile=profile, fixed_geometry=True, draft=draft, qc=config.get("qc"), export=config.get("export"))
+    snippet = write_caption_snippet(output, config.get("caption"), width_mm=width_mm, profile=profile, export=config.get("export"))
     return written + ([snippet] if snippet else [])
 
 
@@ -311,7 +325,8 @@ def add_colorbar(fig, axes, geometry, mappable, levels, config, profile, style) 
         cb = fig.colorbar(mappable, cax=cax, orientation="horizontal", ticks=ticks)
         tick_pt, label_pt = style["tick_fontsize"], style["axis_label_fontsize"]
         offset = 0.7 + tick_pt * PT + 2.0 + 0.5 * label_pt * PT
-        draw_label(fig, label, x0 + length / 2, y0 - offset, fontsize=label_pt)
+        if label:
+            draw_label(fig, label, x0 + length / 2, y0 - offset, fontsize=label_pt)
     else:
         length = block_h * float(cfg.get("length_frac", 0.85))
         x0 = margin["left"] + block_w + float(cfg.get("pad_mm", 3.0))
@@ -320,8 +335,11 @@ def add_colorbar(fig, axes, geometry, mappable, levels, config, profile, style) 
         cb = fig.colorbar(mappable, cax=cax, orientation="vertical", ticks=ticks)
         tick_pt, label_pt = style["tick_fontsize"], style["axis_label_fontsize"]
         offset = 0.7 + 2.0 * tick_pt * PT + 1.0 + 0.75 * label_pt * PT
-        draw_label(fig, label, x0 + thickness + offset, y0 + length / 2, fontsize=label_pt, rotation=90)
-    cb.ax.tick_params(labelsize=style["tick_fontsize"], width=style["tick_width"], length=style["tick_length"], direction="in")
+        if label:
+            draw_label(fig, label, x0 + thickness + offset, y0 + length / 2, fontsize=label_pt, rotation=90)
+    cb.ax.tick_params(labelsize=style["tick_fontsize"], width=style["tick_width"], length=style["tick_length"],
+                      direction=cfg.get("tick_direction", "in"))
+    cb.minorticks_off()
     cb.outline.set_linewidth(style["spine_width"])
     if cb.solids is not None:
         cb.solids.set_rasterized(True)

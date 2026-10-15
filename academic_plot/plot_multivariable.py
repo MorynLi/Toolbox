@@ -295,8 +295,8 @@ def draw_main(
     )
 
     width_mm = fig.get_figwidth() * 25.4
-    written = export_figure(fig, output, profile=profile, fixed_geometry=fixed_geometry, draft=draft, qc=config.get("qc"))
-    snippet = write_caption_snippet(output, config.get("caption"), width_mm=width_mm, profile=profile)
+    written = export_figure(fig, output, profile=profile, fixed_geometry=fixed_geometry, draft=draft, qc=config.get("qc"), export=config.get("export"))
+    snippet = write_caption_snippet(output, config.get("caption"), width_mm=width_mm, profile=profile, export=config.get("export"))
     return written + ([snippet] if snippet else [])
 
 

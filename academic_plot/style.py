@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager, rcParams
 from matplotlib.text import Text
 
+ENGINE_VERSION = "2.0.0"
 PROFILE_DIR = Path(__file__).with_name("profiles")
 FONT_DIR_ENV = "ACADEMIC_PLOT_FONT_DIR"
 MM_PER_INCH = 25.4
@@ -35,7 +36,11 @@ def _register_font_dir(font_dir: str | Path | None) -> None:
             continue
         for path in sorted(Path(folder).glob("*")):
             if path.suffix.lower() in {".ttf", ".ttc", ".otf"}:
-                font_manager.fontManager.addfont(str(path))
+                try:
+                    font_manager.fontManager.addfont(str(path))
+                except (RuntimeError, OSError):
+                    # C:\Windows\Fonts holds files FreeType cannot open; a missing profile font still raises below.
+                    continue
 
 
 def _font_file(name: str, *, style: str = "normal", weight: int = 400) -> str | None:
@@ -317,14 +322,22 @@ def export_figure(
     fixed_geometry: bool,
     draft: bool = False,
     qc: dict[str, Any] | None = None,
+    export: dict[str, Any] | None = None,
 ) -> list[Path]:
-    """Save every profile format next to `output`. A legacy '.svg' output with no profile saves SVG only."""
+    """Save every format next to `output` (profile formats, or spec `export` override).
+
+    A legacy '.svg' output with no profile saves SVG only. Each file carries the engine version
+    and profile in its metadata so any figure can be traced back to how it was made.
+    """
     output.parent.mkdir(parents=True, exist_ok=True)
     if profile is None:
         formats, dpi = [output.suffix.lstrip(".") or "svg"], 300
     else:
         formats = list(profile["export"]["formats"])
         dpi = int(profile["export"]["png_dpi"])
+    if export:
+        formats = list(export.get("formats", formats))
+        dpi = int(export.get("png_dpi", dpi))
     stem = output.with_suffix("")
     if draft:
         fig.text(0.995, 0.005, "DRAFT", ha="right", va="bottom", fontsize=6, color="#B00000", alpha=0.7)
@@ -343,10 +356,14 @@ def export_figure(
     if not fixed_geometry:
         kwargs.update(bbox_inches="tight", pad_inches=0.03)
     written = []
+    stamp = f"academic_plot {ENGINE_VERSION}; profile={(profile or {}).get('name', 'legacy')}; fonts={'draft' if draft else 'final'}"
     for fmt in formats:
         path = stem.with_suffix(f".{fmt}")
+        meta = {"Creator": stamp}
+        if fmt in {"png", "svg"}:
+            meta["Description"] = stamp
         # dpi also sets the resolution of rasterized layers (filled contours) inside PDF/SVG.
-        fig.savefig(path, format=fmt, dpi=dpi, **kwargs)
+        fig.savefig(path, format=fmt, dpi=dpi, metadata=meta, **kwargs)
         written.append(path)
     plt.close(fig)
     return written
@@ -358,12 +375,27 @@ def write_caption_snippet(
     *,
     width_mm: float,
     profile: dict[str, Any] | None,
+    export: dict[str, Any] | None = None,
 ) -> Path | None:
-    """Write a LaTeX figure block; the title lives in the document, not in the artwork."""
+    """Write the figure title as text next to the artwork; it never goes inside the image.
+
+    <stem>.tex: LaTeX block (\\bicaption for the thesis, \\caption for journals), width in mm.
+    <stem>.caption.txt: the same title for pasting into a Word caption (题注).
+    """
     if not caption or profile is None:
         return None
     stem = output.with_suffix("")
-    graphic = f"{stem.name}.pdf" if "pdf" in profile["export"]["formats"] else output.name
+    formats = (export or {}).get("formats", profile["export"]["formats"])
+    ext = next((f for f in ("pdf", "svg", "png") if f in formats), formats[0])
+    graphic = f"{stem.name}.{ext}"
+    number = caption.get("number", "X.X")
+    lines = []
+    if caption.get("zh"):
+        lines.append(f"图{number} {caption['zh']}")
+    if caption.get("en"):
+        lines.append(f"Fig. {number} {caption['en']}")
+    lines.append(f"[插入宽度 {width_mm:.1f} mm，100% 不缩放]")
+    stem.with_suffix(".caption.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     label = caption.get("label", f"fig:{stem.name}")
     if profile.get("caption") == "bicaption":
         caption_line = f"\\bicaption{{{caption.get('zh', '')}}}{{{caption.get('en', '')}}}"
