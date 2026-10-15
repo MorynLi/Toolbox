@@ -1,0 +1,3 @@
+# Locked presets and regression fixtures are hashed: keep their bytes exactly (no CRLF conversion)
+academic_plot/presets/** -text
+academic_plot/tests/reference/** -text

@@ -22,3 +22,6 @@ Gamedata/data/
 # academic_plot generated outputs
 academic_plot/**/*.pdf
 academic_plot/**/*.tex
+
+# Regression reference images are test fixtures, not generated outputs
+!academic_plot/tests/reference/*.png

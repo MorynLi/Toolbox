@@ -54,6 +54,27 @@ python plot_map.py --config example/map_config.json --output out/map.svg --font-
 - `export: {"formats": [...], "png_dpi": N}` 覆盖样式档的导出格式；有 `caption` 时另写 `<stem>.caption.txt`（Word 题注文字）。每个文件的元数据记录引擎版本和样式档。
 - 项目侧锁定样式的用法：把完整 spec（除 panels/caption/色阶外）存为项目内模板，项目脚本只填数据和图题，参见 south-china-sea 项目 `绘图/scs_map.py`。
 
+## 锁定预设地图（plot_preset_map.py）
+
+同一类图要长期保持完全一致时（如课题的全部空间分布图），把整份样式存为预设，调用者只能选数据、色阶档和图题，不能改样式。
+
+```bash
+python plot_preset_map.py --list
+python plot_preset_map.py --preset scs_field --scale 平均有效波高 --input field.csv --title "南海1986—2025年平均有效波高" --output-dir out --caption-zh "…" --caption-en "…"
+```
+
+```python
+from plot_preset_map import draw_preset
+draw_preset(df_or_csv, "out", preset="scs_field", scale="重现期波高", title="南海东南向（SE）10年一遇有效波高")
+```
+
+- 输入：`lon, lat, value` 三列；有行但 value 为空的格点（如样本不足）整格留白，CSV 中没有的格点（陆地）不画。
+- 输出：`<图题>.png/.svg/.caption.txt/.tex`，图内不画标题，文件名就是图题；完整 spec 和输入数据写到 `<输出目录>/_数据/`，供追溯。
+- 预设：`presets/<名称>.json`，其中 `spec` 是样式、`scales` 是允许的色阶档；陆地数据放在 `presets/land/`（由 `make_land_geojson.py` 从 Natural Earth 生成）。
+  - `scs_field`：南海 105–121°E、8–25°N，118×106 mm，无标题，等值线 0.4 灰 0.3 pt，色标在右侧且不加标注，显示平滑 0.05°、σ=0.1°；色阶档有 `重现期波高`（0–12 m）、`平均有效波高`（0.2–2.6 m）、`平均波周期`（YlOrRd，2–8 s）。
+- 字体：未指定 `--font-dir` 和 `ACADEMIC_PLOT_FONT_DIR` 时，Windows 上自动使用 `C:\Windows\Fonts`。
+- **改预设或改引擎后必须运行 `python tests/preset_check.py`**：它核对预设文件哈希，并重绘参考场与验收图比对。新增色阶档或修改样式须经用户同意，并在同一次提交中更新哈希和参考图。
+
 ## 稳定规则
 
 - 参考/实测：深红色虚线 `#8B0000`；模拟：黑色实线。
@@ -81,6 +102,8 @@ academic_plot/
 ├─ plot_validation.py        # 多站点 × 单变量
 ├─ plot_multivariable.py     # 单事件 × 多变量
 ├─ plot_map.py               # 经纬度场地图
+├─ plot_preset_map.py        # 锁定预设地图（只换数据、色阶档、图题）
+├─ presets/                  # 预设样式与陆地数据
 ├─ requirements.txt
 ├─ example/
 │  ├─ config_1col_a4.json
@@ -90,7 +113,9 @@ academic_plot/
 ├─ docs/
 │  └─ MANUAL_TESTING.md
 └─ tests/
-   └─ smoke_test.py
+   ├─ smoke_test.py
+   ├─ preset_check.py        # 预设回归（需真实字体）
+   └─ reference/
 ```
 
 ## 布局参数

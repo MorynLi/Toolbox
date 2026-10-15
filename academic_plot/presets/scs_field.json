@@ -1,0 +1,170 @@
+{
+  "description": "South China Sea single-panel field map (105-121E, 8-25N), 118x106 mm, title-free; accepted 2026-10-15 for the south-china-sea project. Callers may only choose data, a scale below, the title and captions.",
+  "spec": {
+    "profile": "thesis_zh",
+    "layout": {
+      "rows": 1,
+      "cols": 1,
+      "geometry": {
+        "profile": "academic_mm_v1",
+        "panel_size_mm": [
+          90,
+          95.625
+        ],
+        "gap_mm": [
+          0,
+          0
+        ],
+        "margin_mm": {
+          "left": 13,
+          "right": 0,
+          "bottom": 7,
+          "top": 3
+        }
+      }
+    },
+    "map": {
+      "extent": [
+        105,
+        121,
+        8,
+        25
+      ],
+      "xticks": [
+        107,
+        111,
+        115,
+        119
+      ],
+      "yticks": [
+        10,
+        15,
+        20
+      ],
+      "tick_direction": "out",
+      "land": {
+        "source": "land/scs_ne50m_land.geojson",
+        "facecolor": "#d9d9d9",
+        "edgecolor": "0.35"
+      }
+    },
+    "style": {
+      "tick_fontsize": 7.5,
+      "annotation_fontsize": 6.5,
+      "spine_width": 0.5,
+      "tick_width": 0.5,
+      "tick_length": 2,
+      "contour_line_width": 0.3,
+      "coast_line_width": 0.3
+    },
+    "field": {
+      "cmap": "YlGnBu",
+      "extend": "max",
+      "contour_color": "0.4",
+      "contour_labels": true,
+      "contour_label_format": "%g",
+      "label": ""
+    },
+    "colorbar": {
+      "position": "right",
+      "block_mm": 15,
+      "pad_mm": 3,
+      "thickness_mm": 4,
+      "length_frac": 1.0,
+      "tick_direction": "out"
+    },
+    "display_smoothing": {
+      "enabled": true,
+      "target_res_deg": 0.05,
+      "sigma": 2,
+      "min_support": 0.5,
+      "blank_missing": true
+    },
+    "panel_letters": false,
+    "range_guard": {
+      "mode": "error"
+    },
+    "qc": {
+      "text": "warn"
+    },
+    "export": {
+      "formats": [
+        "png",
+        "svg"
+      ],
+      "png_dpi": 600
+    }
+  },
+  "scales": {
+    "重现期波高": {
+      "levels": {
+        "start": 0,
+        "stop": 12,
+        "step": 0.2
+      },
+      "ticks": [
+        0,
+        2,
+        4,
+        6,
+        8,
+        10,
+        12
+      ],
+      "contours": [
+        2,
+        4,
+        6,
+        8,
+        10
+      ]
+    },
+    "平均有效波高": {
+      "cmap": "YlGnBu",
+      "levels": {
+        "start": 0.2,
+        "stop": 2.6,
+        "step": 0.05
+      },
+      "ticks": [
+        0.2,
+        0.6,
+        1.0,
+        1.4,
+        1.8,
+        2.2,
+        2.6
+      ],
+      "contours": [
+        0.5,
+        1.0,
+        1.5,
+        2.0
+      ]
+    },
+    "平均波周期": {
+      "cmap": "YlOrRd",
+      "levels": {
+        "start": 2,
+        "stop": 8,
+        "step": 0.1
+      },
+      "ticks": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "contours": [
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    }
+  }
+}
